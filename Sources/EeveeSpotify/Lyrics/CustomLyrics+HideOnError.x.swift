@@ -6,6 +6,9 @@ class ErrorViewControllerHook: ClassHook<UIViewController> {
     typealias Group = LyricsErrorHandlingGroup  // Not activated for 9.1.x
     
     static var targetName: String {
+        if EeveeSpotify.hookTarget == .v91 {
+            return "UIView" // ErrorViewController doesn't exist on 9.1.x
+        }
         switch EeveeSpotify.hookTarget {
         case .lastAvailableiOS14: return "Lyrics_CoreImpl.ErrorViewController"
         default: return "Lyrics_NPVCommunicatorImpl.ErrorViewController"

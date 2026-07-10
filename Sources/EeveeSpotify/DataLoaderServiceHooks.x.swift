@@ -85,6 +85,7 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             // This matches the execution context Spotify's renderer expects and eliminates
             // the @MainActor isolation violation entirely.
             if url.isLyrics {
+                writeDebugLog("[LyricsNet] SPTDataLoader lyrics request: \(url.path)")
                 let originalLyrics = try? Lyrics(serializedBytes: buffer)
 
                 let semaphore = DispatchSemaphore(value: 0)

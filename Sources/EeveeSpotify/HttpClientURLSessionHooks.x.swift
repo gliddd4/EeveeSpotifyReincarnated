@@ -69,6 +69,7 @@ class HttpClientURLSessionHook: ClassHook<NSObject>, SpotifySessionDelegate {
 
         do {
             if url.isLyrics {
+                writeDebugLog("[LyricsNet] HttpClient lyrics request: \(url.path)")
                 let originalLyrics = try? Lyrics(serializedBytes: buffer)
 
                 let semaphore = DispatchSemaphore(value: 0)

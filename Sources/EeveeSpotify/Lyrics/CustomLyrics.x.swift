@@ -91,6 +91,21 @@ private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
         throw LyricsError.noSuchSong
     }
 
+    // Local files (spotify:local:...) have no real Spotify track ID, so
+    // providers that require one (SpicyLyrics) can't look them up.
+    // Force Genius for local tracks — it searches by title+artist and
+    // has the best coverage without needing a user token.
+    let isLocalTrack = trackId.isLocalTrackIdentifier
+    writeDebugLog("[Lyrics] loadCustomLyricsForTrackId: trackId=\(trackId) isLocal=\(isLocalTrack) source=\(source)")
+    if isLocalTrack {
+        if hasMetadata {
+            source = .genius
+        } else {
+            writeDebugLog("[Lyrics] Local track but no metadata, cannot search: \(trackId)")
+            throw LyricsError.noSuchSong
+        }
+    }
+
     let searchQuery = LyricsSearchQuery(
         title: currentTitle ?? "",
         primaryArtist: currentArtist ?? "",
@@ -206,6 +221,14 @@ private func loadCustomLyricsForCurrentTrack() throws -> Lyrics {
     let options = UserDefaults.lyricsOptions
     var source = UserDefaults.lyricsSource
     
+    // Local files have no real Spotify track ID — force Genius which
+    // searches by title+artist.
+    let isLocal = track.trackIdentifier.isLocalTrackIdentifier
+    writeDebugLog("[Lyrics] loadCustomLyricsForCurrentTrack: trackId=\(track.trackIdentifier) isLocal=\(isLocal) source=\(source)")
+    if isLocal {
+        source = .genius
+    }
+
     // switched to swift 5.8 syntax to compile with Theos on Linux.
     var repository: LyricsRepository
 
@@ -293,11 +316,23 @@ private func loadCustomLyricsForCurrentTrack() throws -> Lyrics {
 
 /// Extracts the Spotify track ID from a `/color-lyrics/v2/track/{trackId}` URL path.
 /// Returns nil if the path doesn't match the expected format.
+/// Handles both regular Spotify track IDs and local file URIs (spotify:local:...).
 func extractTrackId(from path: String) -> String? {
+    // Try local track URI first (spotify:local:artist:title:duration)
+    if let range = path.range(of: #"/track/(spotify:local:[^/]+)"#, options: .regularExpression) {
+        let trackId = String(path[range].split(separator: "/").last ?? "")
+        if !trackId.isEmpty {
+            writeDebugLog("[Lyrics] extractTrackId: found local URI '\(trackId)'")
+            return trackId
+        }
+    }
+    // Standard Spotify track ID
     guard let range = path.range(of: #"/track/([a-zA-Z0-9]+)"#, options: .regularExpression) else {
+        writeDebugLog("[Lyrics] extractTrackId: no match in path '\(path)'")
         return nil
     }
     let trackId = String(path[range].split(separator: "/").last ?? "")
+    if trackId.isEmpty { writeDebugLog("[Lyrics] extractTrackId: empty match in '\(path)'") }
     return trackId.isEmpty ? nil : trackId
 }
 
@@ -383,6 +418,7 @@ func emptyLyricsData(originalLyrics: Lyrics? = nil) -> Data? {
 }
 
 func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics? = nil) throws -> Data {
+    writeDebugLog("[Lyrics] getLyricsDataForCurrentTrack called: path=\(originalPath)")
     
     // track id from URL path; player objects are nil on 9.1.6
     // path: /color-lyrics/v2/track/{trackId}

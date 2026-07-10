@@ -6,6 +6,9 @@ class LyricsOnlyViewControllerHook: ClassHook<UIViewController> {
     typealias Group = LyricsErrorHandlingGroup  // Not activated for 9.1.x
     
     static var targetName: String {
+        if EeveeSpotify.hookTarget == .v91 {
+            return "UIView" // LyricsOnlyViewController doesn't exist on 9.1.x
+        }
         switch EeveeSpotify.hookTarget {
         case .lastAvailableiOS14: return "Lyrics_CoreImpl.LyricsOnlyViewController"
         default: return "Lyrics_NPVCommunicatorImpl.LyricsOnlyViewController"

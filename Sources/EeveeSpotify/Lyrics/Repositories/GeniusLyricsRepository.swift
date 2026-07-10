@@ -30,7 +30,11 @@ class GeniusLyricsRepository: LyricsRepository {
             stringUrl += "?\(queryString)"
         }
         
-        let request = URLRequest(url: URL(string: stringUrl)!)
+        guard let requestUrl = URL(string: stringUrl) else {
+            writeDebugLog("[Lyrics][Genius] invalid request URL: \(stringUrl)")
+            throw LyricsError.decodingError
+        }
+        let request = URLRequest(url: requestUrl)
 
         let semaphore = DispatchSemaphore(value: 0)
         var data: Data?
