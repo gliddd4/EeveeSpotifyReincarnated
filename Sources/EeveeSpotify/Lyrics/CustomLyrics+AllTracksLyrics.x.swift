@@ -145,6 +145,35 @@ class NPVScrollViewControllerV91Hook: ClassHook<NSObject> {
 // isEnabledForTrack: method for Orion to swizzle).
 struct V91LyricsScrollProviderGroup: HookGroup {}
 
+// V91-compatible metadata hook — this is the actual lyrics-availability GATE on
+// 9.1.60. Spotify decides whether to fire the `/color-lyrics/v2` request (and
+// therefore whether the lyrics card can show anything) from the track's
+// `has_lyrics` flag. For local files that flag is false, so the request is
+// never made and lyrics can't display. Injecting `has_lyrics: true` here mirrors
+// the baseline `SPTPlayerTrackHook.metadata()` (which is what makes non-9.1.x
+// local lyrics work) and forces Spotify to fetch/replace lyrics for every track,
+// including locals.
+//
+// `SPTPlayerTrack` is declared as an `@objc protocol` with
+// `metadata() -> [String:String]`, so this signature matches the real method
+// and Orion will not hit a signature-mismatch fatalError.
+// Isolated in its own group so a future incompatibility can't take down the
+// (working) URI / NPVScroll hooks, and activation is guarded at runtime on the
+// selector actually existing.
+struct V91LyricsMetadataGroup: HookGroup {}
+
+class SPTPlayerTrackMetadataV91Hook: ClassHook<NSObject> {
+    typealias Group = V91LyricsMetadataGroup
+    static let targetName = "SPTPlayerTrack"
+
+    func metadata() -> [String: String] {
+        var meta = orig.metadata()
+        meta["has_lyrics"] = "true"
+        writeDebugLog("[LyricsV91] metadata() injecting has_lyrics=true")
+        return meta
+    }
+}
+
 class LyricsScrollProviderV91Hook: ClassHook<NSObject> {
     typealias Group = V91LyricsScrollProviderGroup
     static let targetName = "Lyrics_CoreImpl.LyricsScrollProvider"

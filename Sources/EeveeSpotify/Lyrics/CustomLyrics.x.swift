@@ -422,7 +422,19 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
     
     // track id from URL path; player objects are nil on 9.1.6
     // path: /color-lyrics/v2/track/{trackId}
-    guard let trackIdentifier = extractTrackId(from: originalPath), !trackIdentifier.isEmpty else {
+    var trackIdentifier = extractTrackId(from: originalPath)
+    // On 9.1.x the local-track URI is rewritten to a bare `spotify:track:`
+    // (empty id) so Spotify still fires the lyrics request, which leaves the
+    // path with no usable id. Fall back to the local track id captured by
+    // NPVScrollViewControllerV91Hook so the prefetch (keyed by that id) lines
+    // up and we can still serve custom lyrics for local files.
+    if trackIdentifier == nil || trackIdentifier!.isEmpty {
+        if let captured = capturedTrackId, !captured.isEmpty {
+            writeDebugLog("[Lyrics] extractTrackId empty; falling back to capturedTrackId=\(captured)")
+            trackIdentifier = captured
+        }
+    }
+    guard let trackIdentifier = trackIdentifier, !trackIdentifier.isEmpty else {
         throw LyricsError.noCurrentTrack
     }
 
