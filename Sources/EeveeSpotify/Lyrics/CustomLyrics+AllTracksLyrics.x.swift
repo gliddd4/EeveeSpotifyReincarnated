@@ -11,6 +11,12 @@ class SPTPlayerTrackHook: ClassHook<NSObject> {
         : "SPTPlayerTrack"
 
     func metadata() -> [String: String] {
+        // On 9.1.x the metadata injection is owned exclusively by
+        // SPTPlayerTrackMetadataV91Hook (activated in its own group) to avoid
+        // two hooks swizzling the same selector. Here we just pass through.
+        guard EeveeSpotify.hookTarget != .v91 else {
+            return orig.metadata()
+        }
         var meta = orig.metadata()
         meta["has_lyrics"] = "true"
         return meta
@@ -144,6 +150,26 @@ class NPVScrollViewControllerV91Hook: ClassHook<NSObject> {
 // fatalError that the old dummy-"UIView" target caused (UIView has no
 // isEnabledForTrack: method for Orion to swizzle).
 struct V91LyricsScrollProviderGroup: HookGroup {}
+
+// 9.1.x lyrics-availability GATE: inject `has_lyrics: true` into
+// SPTPlayerTrack.metadata() so Spotify fires `/color-lyrics/v2` for every
+// track (incl. locals). SPTPlayerTrackHook is a no-op pass-through on 9.1.x,
+// so this is the sole metadata injector (no double-swizzle). Deliberately has
+// NO logging: metadata() is called on a background queue by Spotify and
+// writeDebugLog (file I/O) there triggered an Orion fatalError / queue crash
+// on normal tracks. Mirrors SPTPlayerTrackHook.metadata() exactly.
+struct V91LyricsMetadataGroup: HookGroup {}
+
+class SPTPlayerTrackMetadataV91Hook: ClassHook<NSObject> {
+    typealias Group = V91LyricsMetadataGroup
+    static let targetName = "SPTPlayerTrack"
+
+    func metadata() -> [String: String] {
+        var meta = orig.metadata()
+        meta["has_lyrics"] = "true"
+        return meta
+    }
+}
 
 class LyricsScrollProviderV91Hook: ClassHook<NSObject> {
     typealias Group = V91LyricsScrollProviderGroup

@@ -364,6 +364,18 @@ struct EeveeSpotify: Tweak {
                     writeDebugLog("[INIT] Skipped V91LyricsScrollProviderGroup (Lyrics_CoreImpl.LyricsScrollProvider missing on 9.1.x)")
                 }
 
+                // 9.1.x lyrics-availability GATE: inject `has_lyrics: true` into
+                // SPTPlayerTrack.metadata() (owned solely by V91LyricsMetadataGroup;
+                // SPTPlayerTrackHook is a pass-through on 9.1.x). Guard on the
+                // selector actually existing to avoid surprising the runtime.
+                if let metaCls = NSClassFromString("SPTPlayerTrack"),
+                   metaCls.instancesRespond(to: Selector(("metadata"))) {
+                    V91LyricsMetadataGroup().activate()
+                    writeDebugLog("[INIT] Activated V91LyricsMetadataGroup (metadata gate)")
+                } else {
+                    writeDebugLog("[INIT] Skipped V91LyricsMetadataGroup (SPTPlayerTrack/metadata missing)")
+                }
+
             }
 
             // Settings integration (guarded)
