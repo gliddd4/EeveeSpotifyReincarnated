@@ -9,7 +9,19 @@ struct ModernLyricsGroup: HookGroup { }
 struct V91LyricsGroup: HookGroup { }            // 9.1.x-safe subset
 struct LyricsErrorHandlingGroup: HookGroup { }  // not activated on 9.1.x
 
-var lyricsState = LyricsLoadingState()
+private let lyricsStateQueue = DispatchQueue(label: "com.eeveespotify.lyricsState")
+private var _lyricsState = LyricsLoadingState()
+
+var lyricsState: LyricsLoadingState {
+    get { lyricsStateQueue.sync { _lyricsState } }
+    set { lyricsStateQueue.sync { _lyricsState = newValue } }
+}
+
+// Title/artist last resolved by loadCustomLyricsForCurrentTrack, used as a
+// fallback by loadCustomLyricsForTrackId so Genius can find local tracks on
+// 9.1.x where the player object is nil.
+var lyricsSearchTitle: String? = nil
+var lyricsSearchArtist: String? = nil
 
 var hasShownRestrictedPopUp = false
 var hasShownUnauthorizedPopUp = false
@@ -87,6 +99,23 @@ private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
         }
     }
 
+    // 5. Local track fallback: the captured id (spotify:local:...) may not
+    // equal the bare numeric id in the lyrics request, so use the captured
+    // title/artist directly when present.
+    if !hasMetadata, trackId.isLocalOrNonSpotifyTrackId,
+       let title = capturedTrackTitle, let artist = capturedArtistName {
+        currentTitle = title
+        currentArtist = artist
+        hasMetadata = true
+    }
+
+    // 6. Fall back to title/artist resolved by loadCustomLyricsForCurrentTrack.
+    if !hasMetadata, let title = lyricsSearchTitle, let artist = lyricsSearchArtist {
+        currentTitle = title
+        currentArtist = artist
+        hasMetadata = true
+    }
+
     if needsMetadata && !hasMetadata {
         throw LyricsError.noSuchSong
     }
@@ -103,6 +132,7 @@ private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
     if isLocalTrack {
         if hasMetadata {
             source = .genius
+            writeDebugLog("[Lyrics] Genius search local: title=\(currentTitle ?? "") artist=\(currentArtist ?? "")")
         } else {
             writeDebugLog("[Lyrics] Local track but no metadata, cannot search: \(trackId)")
             throw LyricsError.noSuchSong
@@ -142,6 +172,9 @@ private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
         lyricsDto = try repository.getLyrics(searchQuery, options: options)
     }
     catch let error {
+        if isLocalTrack {
+            writeDebugLog("[Lyrics] Genius local search failed: \(error)")
+        }
         if let lyricsError = error as? LyricsError {
             lyricsState.fallbackError = lyricsError
 
@@ -196,6 +229,10 @@ private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
     
     lyricsState.loadedSuccessfully = true
 
+    if isLocalTrack {
+        writeDebugLog("[Lyrics] Genius local search success: title=\(currentTitle ?? "") artist=\(currentArtist ?? "")")
+    }
+
     let lyrics = Lyrics.with {
         $0.data = lyricsDto.toSpotifyLyricsData(source: source.description)
     }
@@ -214,6 +251,9 @@ private func loadCustomLyricsForCurrentTrack() throws -> Lyrics {
     
     let trackTitle = track.trackTitle()
     let artistName = track.artistName()
+
+    lyricsSearchTitle = trackTitle
+    lyricsSearchArtist = artistName
 
     let searchQuery = LyricsSearchQuery(
         title: trackTitle,
@@ -441,7 +481,7 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
         throw LyricsError.noCurrentTrack
     }
 
-    if capturedTrackId != trackIdentifier {
+    if !trackIdentifier.isLocalOrNonSpotifyTrackId, capturedTrackId != trackIdentifier {
         capturedTrackTitle = nil
         capturedArtistName = nil
         capturedTrackId = nil
