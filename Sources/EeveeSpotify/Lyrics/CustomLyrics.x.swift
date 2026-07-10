@@ -95,8 +95,11 @@ private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
     // providers that require one (SpicyLyrics) can't look them up.
     // Force Genius for local tracks — it searches by title+artist and
     // has the best coverage without needing a user token.
-    let isLocalTrack = trackId.isLocalTrackIdentifier
-    writeDebugLog("[Lyrics] loadCustomLyricsForTrackId: trackId=\(trackId) isLocal=\(isLocalTrack) source=\(source)")
+    // On 9.1.x the local track surfaces as a short non-Spotify id (e.g.
+    // /color-lyrics/v2/track/173), which isn't a spotify:local: URI, so
+    // treat any non-Spotify id as local too.
+    let isLocalTrack = trackId.isLocalOrNonSpotifyTrackId
+    writeDebugLog("[Lyrics] loadCustomLyricsForTrackId: trackId=\(trackId) isLocal=\(isLocalTrack) source=\(source) hasMetadata=\(hasMetadata)")
     if isLocalTrack {
         if hasMetadata {
             source = .genius
@@ -223,7 +226,7 @@ private func loadCustomLyricsForCurrentTrack() throws -> Lyrics {
     
     // Local files have no real Spotify track ID — force Genius which
     // searches by title+artist.
-    let isLocal = track.trackIdentifier.isLocalTrackIdentifier
+    let isLocal = track.trackIdentifier.isLocalOrNonSpotifyTrackId
     writeDebugLog("[Lyrics] loadCustomLyricsForCurrentTrack: trackId=\(track.trackIdentifier) isLocal=\(isLocal) source=\(source)")
     if isLocal {
         source = .genius
