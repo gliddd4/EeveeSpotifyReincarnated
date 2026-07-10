@@ -54,7 +54,44 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             return
         }
 
-        guard let buffer = URLSessionHelper.shared.obtainData(for: task) else {
+        let buffer = URLSessionHelper.shared.obtainData(for: task)
+
+        // Lyrics — deliver custom payload even when the buffered original body is nil
+        // (local tracks may not buffer a body). Async fetch with 18s budget, falls back
+        // to Spotify's own response on failure.
+        //
+        // iOS 27 / Spotify 9.1.60 fix: Spotify's URLSession delegate handler for
+        // didReceiveData now accesses @MainActor-isolated state. When we call orig.*
+        // from the SPTDataLoaderService delegate queue (a background serial queue),
+        // Swift's strict concurrency runtime trips _swift_task_checkIsolatedSwift and
+        // kills the process with EXC_BREAKPOINT / SIGTRAP.
+        //
+        // Fix: dispatch the orig.URLSession calls onto the main queue.
+        if url.isLyrics {
+            writeDebugLog("[LyricsNet] SPTDataLoader lyrics request: \(url.path)")
+            let originalLyrics = buffer.flatMap { try? Lyrics(serializedBytes: $0) }
+
+            let semaphore = DispatchSemaphore(value: 0)
+            var customLyricsData: Data?
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                customLyricsData = try? getLyricsDataForCurrentTrack(url.path, originalLyrics: originalLyrics)
+                semaphore.signal()
+            }
+
+            _ = semaphore.wait(timeout: .now() + .milliseconds(18000))
+            if customLyricsData != nil {
+                writeDebugLog("[DL] Delivering custom lyrics for local track")
+            }
+            let lyricsPayload = customLyricsData ?? buffer ?? Data()
+            DispatchQueue.main.async { [self] in
+                orig.URLSession(session, dataTask: task, didReceiveData: lyricsPayload)
+                orig.URLSession(session, task: task, didCompleteWithError: nil)
+            }
+            return
+        }
+
+        guard let buffer = buffer else {
             // Customize 304 fallback — wg-spclient returned 304, no buffer
             // to patch, but we have a cached body from a prior 200.
             if url.isCustomize, let cached = SpotifyResponsePatcher.cachedCustomizeData {
@@ -73,38 +110,6 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         }
 
         do {
-            // Lyrics — async fetch with 18s budget, falls back to Spotify's own response on failure.
-            //
-            // iOS 27 / Spotify 9.1.60 fix: Spotify's URLSession delegate handler for
-            // didReceiveData now accesses @MainActor-isolated state. When we call orig.*
-            // from the SPTDataLoaderService delegate queue (a background serial queue),
-            // Swift's strict concurrency runtime trips _swift_task_checkIsolatedSwift and
-            // kills the process with EXC_BREAKPOINT / SIGTRAP.
-            //
-            // Fix: dispatch the two orig.URLSession calls onto the main queue.
-            // This matches the execution context Spotify's renderer expects and eliminates
-            // the @MainActor isolation violation entirely.
-            if url.isLyrics {
-                writeDebugLog("[LyricsNet] SPTDataLoader lyrics request: \(url.path)")
-                let originalLyrics = try? Lyrics(serializedBytes: buffer)
-
-                let semaphore = DispatchSemaphore(value: 0)
-                var customLyricsData: Data?
-
-                DispatchQueue.global(qos: .userInitiated).async {
-                    customLyricsData = try? getLyricsDataForCurrentTrack(url.path, originalLyrics: originalLyrics)
-                    semaphore.signal()
-                }
-
-                _ = semaphore.wait(timeout: .now() + .milliseconds(18000))
-                let lyricsPayload = customLyricsData ?? buffer
-                DispatchQueue.main.async { [self] in
-                    orig.URLSession(session, dataTask: task, didReceiveData: lyricsPayload)
-                    orig.URLSession(session, task: task, didCompleteWithError: nil)
-                }
-                return
-            }
-
             if let result = try SpotifyResponsePatcher.patch(url: url, buffer: buffer) {
                 writeDebugLog("[DL] Patched \(result.tag.rawValue)")
                 orig.URLSession(session, dataTask: task, didReceiveData: result.data)
@@ -161,11 +166,15 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             guard let lyricsData = data,
                   let ok = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "2.0", headerFields: [:]) else {
                 // Fetch failed — let Spotify handle the original non-200 response.
-                handler(.allow)
-                orig.URLSession(session, dataTask: task, didReceiveResponse: response, completionHandler: { _ in })
+                // Deliver on main to match Spotify's @MainActor delegate context.
+                DispatchQueue.main.async {
+                    handler(.allow)
+                    orig.URLSession(session, dataTask: task, didReceiveResponse: response, completionHandler: { _ in })
+                }
                 return
             }
 
+            writeDebugLog("[DL] Delivering custom lyrics for local track")
             DispatchQueue.main.async { [self] in
                 orig.URLSession(session, dataTask: task, didReceiveResponse: ok, completionHandler: handler)
                 orig.URLSession(session, dataTask: task, didReceiveData: lyricsData)
