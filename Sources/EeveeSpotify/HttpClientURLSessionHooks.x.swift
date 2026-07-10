@@ -50,6 +50,33 @@ class HttpClientURLSessionHook: ClassHook<NSObject>, SpotifySessionDelegate {
             return
         }
 
+        if url.isLyrics {
+            writeDebugLog("[LyricsNet] HttpClient lyrics request: \(url.path)")
+            // The body may be absent for LOCAL tracks ("Missing buffered body");
+            // deliver the custom Genius payload regardless of whether the original
+            // body was buffered. Fall through only when we have no custom data.
+            let buffer = URLSessionHelper.shared.obtainData(for: task)
+            let originalLyrics = buffer.flatMap { try? Lyrics(serializedBytes: $0) }
+
+            let semaphore = DispatchSemaphore(value: 0)
+            var customLyricsData: Data?
+            DispatchQueue.global(qos: .userInitiated).async {
+                customLyricsData = try? getLyricsDataForCurrentTrack(url.path, originalLyrics: originalLyrics)
+                semaphore.signal()
+            }
+            _ = semaphore.wait(timeout: .now() + .milliseconds(18000))
+
+            if let custom = customLyricsData {
+                writeDebugLog("[HCUS] Delivering custom lyrics for local track")
+                DispatchQueue.main.async { [self] in
+                    orig.URLSession(session, dataTask: task, didReceiveData: custom)
+                    orig.URLSession(session, task: task, didCompleteWithError: nil)
+                }
+                return
+            }
+            // No custom payload — forward the original/empty body below.
+        }
+
         guard let buffer = URLSessionHelper.shared.obtainData(for: task) else {
             // marked for modify but no body bytes (0-byte/early-completion/redirect).
             // Always forward completion or Spotify hangs and gets watchdog-killed.
@@ -68,25 +95,6 @@ class HttpClientURLSessionHook: ClassHook<NSObject>, SpotifySessionDelegate {
         }
 
         do {
-            if url.isLyrics {
-                writeDebugLog("[LyricsNet] HttpClient lyrics request: \(url.path)")
-                let originalLyrics = try? Lyrics(serializedBytes: buffer)
-
-                let semaphore = DispatchSemaphore(value: 0)
-                var customLyricsData: Data?
-                DispatchQueue.global(qos: .userInitiated).async {
-                    customLyricsData = try? getLyricsDataForCurrentTrack(url.path, originalLyrics: originalLyrics)
-                    semaphore.signal()
-                }
-                _ = semaphore.wait(timeout: .now() + .milliseconds(18000))
-                let lyricsPayload = customLyricsData ?? buffer
-                DispatchQueue.main.async { [self] in
-                    orig.URLSession(session, dataTask: task, didReceiveData: lyricsPayload)
-                    orig.URLSession(session, task: task, didCompleteWithError: nil)
-                }
-                return
-            }
-
             if let result = try SpotifyResponsePatcher.patch(url: url, buffer: buffer) {
                 writeDebugLog("[HCUS] Patched \(result.tag.rawValue)")
                 orig.URLSession(session, dataTask: task, didReceiveData: result.data)
