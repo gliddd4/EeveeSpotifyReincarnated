@@ -68,30 +68,33 @@ class NPVScrollViewControllerHook: ClassHook<NSObject> {
 // V91-compatible URI hook — converts local URIs to fake track URIs so Spotify
 // fires /color-lyrics/v2 which our network hooks can intercept.
 // Only hooks URI() (not metadata()) because metadata() is incompatible with 9.1.x.
-// Return type MUST match SPTPlayerTrack.URI() exactly: it returns an OPTIONAL
-// NSURL (see baseline SPTPlayerTrackHook). A non-optional or wrong-class return
-// type is a method-signature mismatch that makes Orion fatalError() at dyld init.
+// Return type MUST match SPTPlayerTrack.URI() exactly: optional NSURL (see the
+// baseline SPTPlayerTrackHook). A non-optional or wrong-class return type is a
+// method-signature mismatch that makes Orion fatalError() at dyld init.
 class SPTPlayerTrackURIV91Hook: ClassHook<NSObject> {
     typealias Group = V91LyricsGroup
     static let targetName = "SPTPlayerTrack"
 
     func URI() -> NSURL? {
-        let rawUri = orig.URI() as? SPTURL
+        let uri = orig.URI()
 
         guard shouldOverrideLocalTrackURI,
-              rawUri?.spt_trackIdentifier()?.isLocalTrackIdentifier == true else {
-            let trackId = rawUri?.spt_trackIdentifier()
-            if let trackId = trackId, trackId.hasPrefix("spotify:track:") {
-                let id = String(trackId.dropFirst("spotify:track:".count))
-                if !id.isEmpty {
-                    prefetchLyricsIfNeeded(trackId: id)
+              let absoluteString = uri?.absoluteString,
+              absoluteString.isLocalTrackIdentifier else {
+
+            if let uriString = uri?.absoluteString,
+               uriString.hasPrefix("spotify:track:") {
+                let trackId = uriString.replacingOccurrences(of: "spotify:track:", with: "")
+                if !trackId.isEmpty {
+                    prefetchLyricsIfNeeded(trackId: trackId)
                 }
             }
-            return orig.URI()
+
+            return uri
         }
 
         writeDebugLog("[LyricsV91] URI override: local -> fake track URI")
-        return Dynamic.convert(NSURL(string: "spotify:track:")!, to: SPTURL.self)
+        return NSURL(string: "spotify:track:")!
     }
 }
 
