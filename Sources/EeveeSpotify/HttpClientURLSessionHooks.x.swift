@@ -79,8 +79,11 @@ class HttpClientURLSessionHook: ClassHook<NSObject>, SpotifySessionDelegate {
                     semaphore.signal()
                 }
                 _ = semaphore.wait(timeout: .now() + .milliseconds(18000))
-                orig.URLSession(session, dataTask: task, didReceiveData: customLyricsData ?? buffer)
-                orig.URLSession(session, task: task, didCompleteWithError: nil)
+                let lyricsPayload = customLyricsData ?? buffer
+                DispatchQueue.main.async { [self] in
+                    orig.URLSession(session, dataTask: task, didReceiveData: lyricsPayload)
+                    orig.URLSession(session, task: task, didCompleteWithError: nil)
+                }
                 return
             }
 
@@ -128,16 +131,18 @@ class HttpClientURLSessionHook: ClassHook<NSObject>, SpotifySessionDelegate {
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             let data = try? getLyricsDataForCurrentTrack(url.path)
 
-            guard let lyricsData = data,
-                  let ok = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "2.0", headerFields: [:]) else {
-                handler(.allow)
-                orig.URLSession(session, dataTask: task, didReceiveResponse: response, completionHandler: { _ in })
-                return
-            }
+            DispatchQueue.main.async {
+                guard let lyricsData = data,
+                      let ok = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "2.0", headerFields: [:]) else {
+                    handler(.allow)
+                    orig.URLSession(session, dataTask: task, didReceiveResponse: response, completionHandler: { _ in })
+                    return
+                }
 
-            orig.URLSession(session, dataTask: task, didReceiveResponse: ok, completionHandler: handler)
-            orig.URLSession(session, dataTask: task, didReceiveData: lyricsData)
-            orig.URLSession(session, task: task, didCompleteWithError: nil)
+                orig.URLSession(session, dataTask: task, didReceiveResponse: ok, completionHandler: handler)
+                orig.URLSession(session, dataTask: task, didReceiveData: lyricsData)
+                orig.URLSession(session, task: task, didCompleteWithError: nil)
+            }
         }
     }
 
