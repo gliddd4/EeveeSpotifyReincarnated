@@ -110,23 +110,31 @@ class NPVScrollViewControllerV91Hook: ClassHook<NSObject> {
     static var targetName = "NowPlaying_ScrollImpl.NPVScrollViewController"
 
     func viewWillAppear(_ animated: Bool) {
-        shouldOverrideLocalTrackURI = true
-        // Trigger prefetch for local tracks — statefulPlayer is nil on 9.1.x,
-        // so we use nowPlayingScrollViewController?.loadedTrack as fallback.
+        // Capture local metadata from the REAL track URI. The override must not
+        // be enabled yet: once shouldOverrideLocalTrackURI is true,
+        // SPTPlayerTrackURIV91Hook rewrites the URI to an empty `spotify:track:`,
+        // so spt_trackIdentifier() returns "" and the local check below fails
+        // (capture would never run and Genius would get empty title/artist).
         if let track = nowPlayingScrollViewController?.loadedTrack {
             let trackId = track.URI().spt_trackIdentifier()
+            let title = track.trackTitle()
+            let artist = track.artistName()
             let isLocal = trackId.isLocalTrackIdentifier
             writeDebugLog("[LyricsV91] NPVScroll viewWillAppear: trackId=\(trackId) local=\(isLocal)")
             if isLocal {
-                capturedTrackTitle = track.trackTitle()
-                capturedArtistName = track.artistName()
+                capturedTrackTitle = title
+                capturedArtistName = artist
                 capturedTrackId = trackId
-                writeDebugLog("[LyricsV91] Local track detected — title=\(capturedTrackTitle ?? "?") artist=\(capturedArtistName ?? "?")")
+                writeDebugLog("[V91] captured local track: title=\(title) artist=\(artist)")
                 prefetchLyricsIfNeeded(trackId: trackId)
             }
         } else {
             writeDebugLog("[LyricsV91] NPVScroll viewWillAppear: no track available")
         }
+
+        // Now enable the URI override so Spotify fires /color-lyrics/v2 for the
+        // (rewritten) local track. Keeps the capturedTrackId fallback intact.
+        shouldOverrideLocalTrackURI = true
         orig.viewWillAppear(animated)
     }
     
