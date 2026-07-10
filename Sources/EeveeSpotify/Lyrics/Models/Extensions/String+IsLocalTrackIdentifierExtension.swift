@@ -13,8 +13,10 @@ extension String {
     /// requires a real Spotify track id (SpicyLyrics).
     var isLikelySpotifyTrackId: Bool {
         if self.hasPrefix("spotify:track:") { return true }
-        let allowed = CharacterSet.alphanumerics
-        return self.rangeOfCharacter(from: allowed.inverted) == nil && self.count >= 20
+        // Spotify ids are 22 chars of ASCII [A-Za-z0-9]; use ASCII-only check so
+        // non-ASCII letters/digits can't be misclassified as a real Spotify id.
+        return self.count >= 20
+            && self.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
     }
 
     /// Local for our purposes: an explicit spotify:local: URI OR any id that
