@@ -137,14 +137,20 @@ class NPVScrollViewControllerV91Hook: ClassHook<NSObject> {
 // rewritten to Lyrics_TextComponentImpl), so this target resolves to a dummy
 // UIView to avoid a dyld crash. The real lyrics-enabling point on 9.1.x must
 // be found in the new Lyrics_TextComponentImpl architecture.
+// Separate group so this hook only registers when the real
+// Lyrics_CoreImpl.LyricsScrollProvider class actually exists. On 9.1.x that
+// class is gone (lyrics rewritten to Lyrics_TextComponentImpl), so the group
+// stays unactivated and the hook is never registered — avoiding the dyld
+// fatalError that the old dummy-"UIView" target caused (UIView has no
+// isEnabledForTrack: method for Orion to swizzle).
+struct V91LyricsScrollProviderGroup: HookGroup {}
+
 class LyricsScrollProviderV91Hook: ClassHook<NSObject> {
-    typealias Group = V91LyricsGroup
-    static var targetName = EeveeSpotify.hookTarget == .v91
-        ? "UIView" // Lyrics_CoreImpl.LyricsScrollProvider doesn't exist on 9.1.x
-        : "Lyrics_CoreImpl.LyricsScrollProvider"
+    typealias Group = V91LyricsScrollProviderGroup
+    static let targetName = "Lyrics_CoreImpl.LyricsScrollProvider"
 
     func isEnabledForTrack(_ track: SPTPlayerTrack) -> Bool {
-        let isLocal = track.URI().spt_trackIdentifier().isLocalTrackIdentifier
+        let isLocal = (track.URI() as? SPTURL)?.spt_trackIdentifier().isLocalTrackIdentifier == true
         writeDebugLog("[LyricsV91] LyricsScrollProvider.isEnabledForTrack called: local=\(isLocal)")
         return true
     }

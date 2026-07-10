@@ -354,6 +354,16 @@ struct EeveeSpotify: Tweak {
                     writeDebugLog("[INIT] Skipped V91LyricsGroup (NPVScrollViewController missing)")
                 }
 
+                // LyricsScrollProvider only exists pre-9.1.x (Lyrics_CoreImpl
+                // module). On 9.1.x it's gone, so guard the hook group to avoid
+                // a dyld fatalError from Orion trying to swizzle a missing class.
+                if NSClassFromString("Lyrics_CoreImpl.LyricsScrollProvider") != nil {
+                    V91LyricsScrollProviderGroup().activate()
+                    writeDebugLog("[INIT] Activated V91LyricsScrollProviderGroup")
+                } else {
+                    writeDebugLog("[INIT] Skipped V91LyricsScrollProviderGroup (Lyrics_CoreImpl.LyricsScrollProvider missing on 9.1.x)")
+                }
+
             }
 
             // Settings integration (guarded)
