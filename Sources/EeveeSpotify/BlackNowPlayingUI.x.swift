@@ -71,14 +71,20 @@ private func albumCoverBlackRatio() -> Double {
 private func shouldForceBlackGradient() -> Bool {
     guard UserDefaults.blackNowPlayingUI else { return false }
 
-    let uri = capturedTrackURI ?? ""
+    // Prefer the viewWillAppear-captured URI; fall back to the player's live
+    // track URI so the cache key stays unique even when the scroll-view hook
+    // did not fire for this playback path (e.g. Donda-style covers on builds
+    // where NPVScrollViewController is absent).
+    let uri = capturedTrackURI
+        ?? statefulPlayer?.currentTrack()?.URI()?.absoluteString
+        ?? ""
     if blackCoverURI == uri {
         return blackCoverIsMostlyBlack
     }
 
     let ratio = albumCoverBlackRatio()
     blackCoverURI = uri
-    blackCoverIsMostlyBlack = ratio >= 0.5
+    blackCoverIsMostlyBlack = ratio >= 0.25
     writeDebugLog("[BlackUI] cover blackRatio=\(String(format: "%.2f", ratio)) for uri=\(uri) -> forceBlack=\(blackCoverIsMostlyBlack)")
     return blackCoverIsMostlyBlack
 }
