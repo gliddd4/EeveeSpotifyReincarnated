@@ -30,6 +30,7 @@ modules/zxPluginsInject/packages/
 
 # logs / editor state
 *.log
+gradient.md
 build_log.txt
 .vscode/
 .website/

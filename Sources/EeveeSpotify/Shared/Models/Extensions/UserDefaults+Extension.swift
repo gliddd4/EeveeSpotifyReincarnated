@@ -5,6 +5,7 @@ extension UserDefaults {
     
     private static let musixmatchTokenKey = "musixmatchToken"
     private static let darkPopUpsKey = "darkPopUps"
+    private static let blackNowPlayingUIKey = "blackNowPlayingUI"
     private static let patchTypeKey = "patchType"
     private static let trueShuffleEnabledKey = "trueShuffleEnabled"
     private static let overwriteConfigurationKey = "overwriteConfiguration"
@@ -29,6 +30,15 @@ extension UserDefaults {
         }
         set (darkPopUps) {
             container.set(darkPopUps, forKey: darkPopUpsKey)
+        }
+    }
+
+    static var blackNowPlayingUI: Bool {
+        get {
+            container.object(forKey: blackNowPlayingUIKey) as? Bool ?? false
+        }
+        set (blackNowPlayingUI) {
+            container.set(blackNowPlayingUI, forKey: blackNowPlayingUIKey)
         }
     }
 

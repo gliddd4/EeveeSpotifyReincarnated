@@ -83,6 +83,8 @@ static_color = "Static Color";
 
 color_normalization_factor = "Color Normalization Factor";
 dark_popups = "Dark PopUps";
+black_now_playing_ui = "Black Now Playing UI";
+black_now_playing_ui_description = "Makes the now-playing background gradient all black for album covers that are at least 50% black.";
 
 // Experiments
 
@@ -149,6 +151,7 @@ payment_notice = "EeveeSpotify applies patches to unlock certain Premium feature
 
 debug_title = "Debug";
 export_debug_log = "Export Debug Log";
+export_lyric_debug_log = "Export Lyric Debug Log";
 clear_debug_log = "Clear Debug Log";
 debug_log_cleared = "Debug log cleared.";
 debug_log_cleared_ok = "OK";

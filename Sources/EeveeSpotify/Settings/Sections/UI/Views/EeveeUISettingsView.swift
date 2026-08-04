@@ -48,12 +48,22 @@ struct EeveeUISettingsView: View {
                 }
             }
             
-            Section {
+            Section(
+                footer: Text("black_now_playing_ui_description".localized)
+            ) {
                 Toggle(
                     "dark_popups".localized,
                     isOn: Binding<Bool>(
                         get: { UserDefaults.darkPopUps },
                         set: { UserDefaults.darkPopUps = $0 }
+                    )
+                )
+                
+                Toggle(
+                    "black_now_playing_ui".localized,
+                    isOn: Binding<Bool>(
+                        get: { UserDefaults.blackNowPlayingUI },
+                        set: { UserDefaults.blackNowPlayingUI = $0 }
                     )
                 )
             }

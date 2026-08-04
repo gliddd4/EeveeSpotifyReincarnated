@@ -1,5 +1,6 @@
 import Foundation
 import Orion
+import MediaPlayer
 
 private func probeEnabled(_ name: String) -> Bool {
     guard let v = getenv(name) else { return false }
@@ -17,6 +18,8 @@ private let traceSB:    Bool = false
 // TESTING: dumps SmartShuffle / FreeShuffle service classes so we can
 // pick real selectors for a TrueShuffle hook on this Spotify version.
 private let traceShuffle: Bool = false
+// Enabled for the experimental Canvas build so device logs are self-contained.
+private let traceCanvas: Bool = true
 
 private let importantNotifSubstrings: [String] = [
     "premium", "product", "account", "session", "login", "logout",
@@ -150,7 +153,61 @@ private let sbClassesToDump: [String] = [
     "_TtC24AdsPlatform_ComScoreImpl22ComScorePlayerObserver",
     "Player_ReactiveValueKit.ReactivePlayerState",
 ]
+
+private let canvasClassesToDump: [String] = [
+    "MPNowPlayingInfoCenter",
+    "LockScreen_LockScreenImpl.ArtworkPublisherProvider",
+    "LockScreen_LockScreenImpl.CanvasVideoDownloaderImplementation",
+    "LockScreen_LockScreenImpl.CanvasVideoCropStrategyImplementation",
+    "LockScreen_LockScreenImpl.LockScreenInfoCenterManager",
+    "LockScreen_LockScreenImpl.LockScreenUpdaterImplementation",
+    "LockScreen_LockScreenImpl.StatefulPlayerPublisherImplementation",
+    "Canvas_CommonImpl.CanvasDataLoaderImpl",
+    "Canvas_CommonImpl.CanvasExtendedVideoExporter",
+    "Canvas_CommonImpl.CanvasNowPlayingContentProvider",
+]
 private var classDumpDone = false
+private var canvasProbeStarted = false
+private var canvasProbeSamplesRemaining = 30
+
+private func sampleCanvasNowPlayingInfo() {
+    guard traceCanvas else { return }
+
+    let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+    let keys = info.keys.sorted()
+    let animatedKeys = keys.filter { $0.lowercased().contains("animated") }
+    let staticArtworkType: String = {
+        guard let artwork = info[MPMediaItemPropertyArtwork] else { return "none" }
+        return String(describing: type(of: artwork))
+    }()
+    let title = info[MPMediaItemPropertyTitle] as? String ?? "?"
+    let artist = info[MPMediaItemPropertyArtist] as? String ?? "?"
+
+    writeDebugLog("[CANVAS][NPIC] uri=\(capturedTrackURI ?? "?") title=\(title) artist=\(artist) keys=\(keys) animatedKeys=\(animatedKeys) staticArtwork=\(staticArtworkType)")
+
+    canvasProbeSamplesRemaining -= 1
+    if canvasProbeSamplesRemaining > 0 {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            sampleCanvasNowPlayingInfo()
+        }
+    }
+}
+
+private func startCanvasNowPlayingProbe() {
+    guard traceCanvas, !canvasProbeStarted else { return }
+    canvasProbeStarted = true
+    DispatchQueue.main.async {
+        sampleCanvasNowPlayingInfo()
+    }
+}
+
+@discardableResult
+func requestCanvasNowPlayingProbe() -> Bool {
+    guard traceCanvas else { return false }
+    canvasProbeSamplesRemaining = 30
+    startCanvasNowPlayingProbe()
+    return true
+}
 
 private func dumpClass(_ name: String) {
     guard let cls = NSClassFromString(name) else {
@@ -193,7 +250,7 @@ private func dumpClass(_ name: String) {
 }
 
 private func dumpClassesOnce() {
-    guard runClassDump || traceAds || traceSB || traceShuffle, !classDumpDone else { return }
+    guard runClassDump || traceAds || traceSB || traceShuffle || traceCanvas, !classDumpDone else { return }
     classDumpDone = true
     if runClassDump {
         for n in classesToDump { dumpClass(n) }
@@ -209,6 +266,11 @@ private func dumpClassesOnce() {
         NSLog("[PROBE][SB] === sponsorblock class dump begin ===")
         for n in sbClassesToDump { dumpClass(n) }
         NSLog("[PROBE][SB] === sponsorblock class dump end ===")
+    }
+    if traceCanvas {
+        NSLog("[PROBE][CANVAS] === Canvas/Lock Screen class dump begin ===")
+        for n in canvasClassesToDump { dumpClass(n) }
+        NSLog("[PROBE][CANVAS] === Canvas/Lock Screen class dump end ===")
     }
     // TrueShuffle: dump FreeShuffle / SmartShuffle service surface.
     // NSClassFromString("Module.Class") is unreliable for Swift; iterate the
@@ -314,7 +376,11 @@ func activateEeveeProbes() {
           notifOn ? "on" : "off",
           traceAds ? "on" : "off",
           traceSB ? "on" : "off")
+    if traceCanvas {
+        NSLog("[PROBE] Canvas class dump enabled via EEVEE_TRACE_CANVAS")
+    }
     if netOn { ProbeNetGroup().activate() }
     if notifOn { ProbeNotifGroup().activate() }
     dumpClassesOnce()
+    startCanvasNowPlayingProbe()
 }
