@@ -6,6 +6,11 @@ class ErrorViewControllerHook: ClassHook<UIViewController> {
     typealias Group = LyricsErrorHandlingGroup  // Not activated for 9.1.x
     
     static var targetName: String {
+        // ── START OF AI GENERATED CODE ──
+        if EeveeSpotify.hookTarget == .v91 {
+            return "UIView" // ErrorViewController doesn't exist on 9.1.x
+        }
+        // ── END OF AI GENERATED CODE ──
         switch EeveeSpotify.hookTarget {
         case .lastAvailableiOS14: return "Lyrics_CoreImpl.ErrorViewController"
         default: return "Lyrics_NPVCommunicatorImpl.ErrorViewController"
@@ -31,6 +36,11 @@ class ErrorViewControllerHook: ClassHook<UIViewController> {
                 NSStringFromClass(type(of: $0)) == HookTargetNameHelper.lyricsScrollProvider
             }
             
+            // ── START OF AI GENERATED CODE ──
+            guard Dynamic.convert(controller, to: NSObject.self).responds(to: Selector("collectionView")) else {
+                return
+            }
+            // ── END OF AI GENERATED CODE ──
             let collectionView = controller.collectionView()
             let dataSource = Ivars<__UIDiffableDataSource>(collectionView.dataSource!)._impl
             
