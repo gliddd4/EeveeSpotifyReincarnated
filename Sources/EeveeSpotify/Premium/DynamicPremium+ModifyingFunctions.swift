@@ -16,7 +16,13 @@ func modifyRemoteConfiguration(_ configuration: inout UcsResponse) {
     writeDebugLog("[CANVAS][CONFIG] final lockscreen flags: \(canvasFlags)")
 
     if UserDefaults.overwriteConfiguration {
-        configuration.resolve.configuration = try! BundleHelper.shared.resolveConfiguration()
+        if let resolveConfiguration = try? BundleHelper.shared.resolveConfiguration() {
+            configuration.resolve.configuration = resolveConfiguration
+        } else {
+            // Missing bundle/configuration must not crash every bootstrap —
+            // the assignedValues patching above still keeps premium features on.
+            writeDebugLog("[PREMIUM] resolveConfiguration failed; keeping patched assignedValues")
+        }
     }
 }
 

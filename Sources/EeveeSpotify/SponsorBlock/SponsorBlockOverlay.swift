@@ -107,14 +107,23 @@ final class SponsorBlockOverlay: NSObject, UIGestureRecognizerDelegate {
 
     func update(slider: UIView) {
         let opts = UserDefaults.sponsorBlockOptions
-        slider.subviews
-            .filter { $0.accessibilityIdentifier == overlayTag }
-            .forEach { $0.removeFromSuperview() }
 
-        guard opts.enabled, opts.showOverlay else { return }
+        func removeExistingOverlays() {
+            slider.subviews
+                .filter { $0.accessibilityIdentifier == overlayTag }
+                .forEach { $0.removeFromSuperview() }
+        }
+
+        guard opts.enabled, opts.showOverlay else {
+            removeExistingOverlays()
+            return
+        }
 
         let snap = SponsorBlockSkipper.shared.snapshot()
-        guard snap.duration > 0 else { return }
+        guard snap.duration > 0 else {
+            removeExistingOverlays()
+            return
+        }
 
         let pendingMarker: SponsorBlockPendingSegment? = snap.episodeID.flatMap { id in
             SponsorBlockPendingStore.segments(for: id).first { $0.end == nil }
@@ -123,30 +132,51 @@ final class SponsorBlockOverlay: NSObject, UIGestureRecognizerDelegate {
         let visibleSegments = snap.segments.filter { seg in
             seg.isSkip && opts.action(for: seg.category) != .disabled && !hidden.contains(seg.uuid)
         }
-        guard !visibleSegments.isEmpty || pendingMarker != nil else { return }
+        guard !visibleSegments.isEmpty || pendingMarker != nil else {
+            removeExistingOverlays()
+            return
+        }
 
         let trackFrame = innerTrackFrame(in: slider)
+
+        var frames: [(String, CGRect)] = []
+        var segments: [(SponsorBlockSegment, CGRect)] = []
+        for seg in visibleSegments {
+            let x = CGFloat(seg.start / snap.duration) * trackFrame.width
+            let segW = max(2, CGFloat((seg.end - seg.start) / snap.duration) * trackFrame.width)
+            let f = CGRect(x: x, y: 0, width: segW, height: trackFrame.height)
+            frames.append((seg.uuid, f))
+            segments.append((seg, f))
+        }
+
+        // update() runs from layoutSubviews (ProgressBarSliderHook) — remove +
+        // re-add on every pass re-invalidates layout and loops forever. Skip
+        // when the existing overlay already matches the current segments.
+        if let existing = slider.subviews.first(where: { $0.accessibilityIdentifier == overlayTag })
+            as? SponsorBlockOverlayContainer,
+            existing.frame == trackFrame,
+            existing.segmentFrames.map(\.uuid) == frames.map(\.0) {
+            return
+        }
+
+        removeExistingOverlays()
+
+        let w = trackFrame.width
+        let h = trackFrame.height
+
         let container = SponsorBlockOverlayContainer(frame: trackFrame)
         container.accessibilityIdentifier = overlayTag
         container.isUserInteractionEnabled = true
         container.backgroundColor = .clear
         container.layer.zPosition = 1
 
-        let w = trackFrame.width
-        let h = trackFrame.height
-
-        var frames: [(String, CGRect)] = []
-        for seg in visibleSegments {
-            let x = CGFloat(seg.start / snap.duration) * w
-            let segW = max(2, CGFloat((seg.end - seg.start) / snap.duration) * w)
-            let f = CGRect(x: x, y: 0, width: segW, height: h)
+        for (seg, f) in segments {
             let bar = UIView(frame: f)
             bar.backgroundColor = UIColor.fromHex(opts.color(for: seg.category)).withAlphaComponent(0.65)
             bar.layer.cornerRadius = min(1, h / 2)
             bar.isUserInteractionEnabled = false
             bar.accessibilityIdentifier = segmentBarTag
             container.addSubview(bar)
-            frames.append((seg.uuid, f))
         }
         container.segmentFrames = frames
 

@@ -28,8 +28,12 @@ class URLSessionHelper {
     }
 
     static var CFNetworkVersion: String {
-        let dictionary = Bundle(identifier: "com.apple.CFNetwork")?.infoDictionary!
-        let version = dictionary?["CFBundleShortVersionString"] as! String
+        guard
+            let dictionary = Bundle(identifier: "com.apple.CFNetwork")?.infoDictionary,
+            let version = dictionary["CFBundleShortVersionString"] as? String
+        else {
+            return "CFNetwork/unknown"
+        }
         return "CFNetwork/\(version)"
     }
 

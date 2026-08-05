@@ -23,6 +23,8 @@ struct PopUpHelper {
                 return
             }
 
+            isPopUpShowing = true
+
             let model = Dynamic.SPTEncorePopUpDialogModel
                 .alloc(interface: SPTEncorePopUpDialogModel.self)
                 .initWithTitle(
@@ -47,11 +49,19 @@ struct PopUpHelper {
                 }
 
                 sharedPresenter.dismissPopupWithAnimate(true, clearQueue: false, completion: nil)
-                isPopUpShowing.toggle()
+                isPopUpShowing = false
             })
 
-            isPopUpShowing.toggle()
             sharedPresenter.presentPopUp(dialog)
         }
+    }
+
+    /// Releases the "a popup is up" latch. Called from the popup's event handler
+    /// and from the SPTEncorePopUpPresenter dismiss hook, so every dismissal path
+    /// (button click, outside-tap, Spotify-initiated dismiss) clears the latch —
+    /// without this, a popup dismissed outside its event handler leaves the latch
+    /// set forever and silently drops every later popup.
+    static func resetIsPopUpShowing() {
+        isPopUpShowing = false
     }
 }

@@ -5,20 +5,30 @@ struct AnonymousTokenHelper {
     private static let apiUrl = "https://apic.musixmatch.com"
 
     private static func fetchToken(appId: String) throws -> String {
-        let urlString = "\(apiUrl)/ws/1.1/token.get?app_id=\(appId)"
-        let url = URL(string: urlString)!
+        guard let encodedAppId = appId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "\(apiUrl)/ws/1.1/token.get?app_id=\(encodedAppId)") else {
+            throw AnonymousTokenError.invalidResponse
+        }
 
         let semaphore = DispatchSemaphore(value: 0)
         var responseData: Data?
         var responseError: Error?
 
-        let task = URLSession.shared.dataTask(with: URLRequest(url: url)) { data, _, error in
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+
+        let task = URLSession.shared.dataTask(with: request) { data, _, error in
             responseData = data
             responseError = error
             semaphore.signal()
         }
         task.resume()
-        semaphore.wait()
+        // Bound the wait so a hung network can't leave the settings UI stuck in
+        // isRequestingMusixmatchToken for minutes (up to 3 sequential 60s tries).
+        if semaphore.wait(timeout: .now() + 15) == .timedOut {
+            task.cancel()
+            throw AnonymousTokenError.invalidResponse
+        }
 
         if let error = responseError {
             throw error

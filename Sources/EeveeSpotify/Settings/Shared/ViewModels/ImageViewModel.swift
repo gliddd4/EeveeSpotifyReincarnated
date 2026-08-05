@@ -4,7 +4,7 @@ import UIKit
 class ImageViewModel: ObservableObject {
     @Published var image: UIImage?
 
-    private var imageCache: NSCache<NSString, UIImage>?
+    private let imageCache = NSCache<NSString, UIImage>()
 
     init(urlString: String?) {
         loadImage(urlString: urlString)
@@ -42,10 +42,10 @@ class ImageViewModel: ObservableObject {
     }
 
     private func setImageCache(image: UIImage, key: String) {
-        imageCache?.setObject(image, forKey: key as NSString)
+        imageCache.setObject(image, forKey: key as NSString)
     }
 
     private func getImageFromCache(from key: String) -> UIImage? {
-        return imageCache?.object(forKey: key as NSString) as? UIImage
+        return imageCache.object(forKey: key as NSString)
     }
 }

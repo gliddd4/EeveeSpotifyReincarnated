@@ -103,6 +103,12 @@ class SpotifySessionDelegateBootstrapHook: ClassHook<NSObject>, SpotifySessionDe
                 return
             }
             catch {
+                // Decode failed (schema change, truncated body). Forward the
+                // original buffer so the bootstrap consumer isn't left hanging.
+                writeDebugLog("[BOOTSTRAP] Failed to decode bootstrap protobuf: \(error)")
+                orig.URLSession(session, dataTask: task, didReceiveData: buffer)
+                orig.URLSession(session, task: task, didCompleteWithError: nil)
+                return
             }
         }
         

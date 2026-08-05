@@ -96,9 +96,10 @@ enum SponsorBlockReporter {
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("EeveeSpotify-SponsorBlock/1", forHTTPHeaderField: "X-CLIENT-NAME")
 
-        let payloadStr = String(data: payload, encoding: .utf8) ?? "<binary>"
-        NSLog("[EeveeSpotify][SB][SUBMIT] POST %@ payload=%@", url.absoluteString, payloadStr)
-        writeDebugLog("[SB][submit] POST \(url.absoluteString) payload=\(payloadStr)")
+        // Log only the URL and payload size — the body carries the persistent
+        // userID, so logging it would leak a device identifier to the system log.
+        NSLog("[EeveeSpotify][SB][SUBMIT] POST %@ payloadBytes=%d", url.absoluteString, payload.count)
+        writeDebugLog("[SB][submit] POST \(url.absoluteString) payloadBytes=\(payload.count)")
         session.dataTask(with: req) { data, resp, err in
             if let err { completion(.failure(.transport(err))); return }
             guard let http = resp as? HTTPURLResponse else {

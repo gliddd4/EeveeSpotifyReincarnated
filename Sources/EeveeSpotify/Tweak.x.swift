@@ -608,6 +608,9 @@ struct EeveeSpotify: Tweak {
             UniversalSettingsIntegrationListVCGroup().activate()
         }
         UniversalSettingsIntegrationNavGroup().activate()
-        SettingsIntegrationGroup().activate()
+        // Note: SettingsIntegrationGroup (legacy ProfileSettingsSectionHook) is
+        // deliberately NOT activated here — UniversalSettingsIntegrationProfileGroup
+        // already hooks ProfileSettingsSection with orig+1 rows, and activating both
+        // stacks rows (2+1=3) and force-unwraps RootSettingsViewController.
     }
 }

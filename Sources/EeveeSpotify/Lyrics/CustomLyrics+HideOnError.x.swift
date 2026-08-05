@@ -42,10 +42,17 @@ class ErrorViewControllerHook: ClassHook<UIViewController> {
             }
             // ── END OF AI GENERATED CODE ──
             let collectionView = controller.collectionView()
-            let dataSource = Ivars<__UIDiffableDataSource>(collectionView.dataSource!)._impl
+            guard let collectionViewDataSource = collectionView.dataSource else {
+                return
+            }
+            let dataSource = Ivars<__UIDiffableDataSource>(collectionViewDataSource)._impl
             
             let itemIdentifiers = dataSource.itemIdentifiers()
-            let lyricsProviderItemIdentifier = itemIdentifiers[lyricsProviderIndex!]
+            guard let lyricsProviderIndex,
+                  lyricsProviderIndex < itemIdentifiers.count else {
+                return
+            }
+            let lyricsProviderItemIdentifier = itemIdentifiers[lyricsProviderIndex]
             
             dataSource.deleteItemsWithIdentifiers([lyricsProviderItemIdentifier])
         }

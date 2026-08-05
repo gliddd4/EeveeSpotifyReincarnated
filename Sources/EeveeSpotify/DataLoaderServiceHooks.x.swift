@@ -52,7 +52,7 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         // ── START OF AI GENERATED CODE ──
         // If didReceiveResponse already fully delivered custom lyrics (4xx/5xx
         // path), suppress the redundant didCompleteWithError re-delivery.
-        if SpotifyResponsePatcher.consumeLyricsTask(task.taskIdentifier) {
+        if SpotifyResponsePatcher.consumeLyricsTask(task) {
             return
         }
 
@@ -72,12 +72,15 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         }
 
         // 304 already served — suppress the second completion.
-        if SpotifyResponsePatcher.consumeCustomizeTask(task.taskIdentifier) {
+        if SpotifyResponsePatcher.consumeCustomizeTask(task) {
             orig.URLSession(session, task: task, didCompleteWithError: nil)
             return
         }
 
         guard error == nil, SpotifyResponsePatcher.shouldModify(url) else {
+            // Failed/irrelevant task: the buffered body (if any) will never be
+            // consumed — drop it to avoid unbounded buffer growth.
+            URLSessionHelper.shared.discardData(for: task)
             orig.URLSession(session, task: task, didCompleteWithError: error)
             return
         }
@@ -211,7 +214,7 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             }
             orig.URLSession(session, dataTask: task, didReceiveResponse: synthetic, completionHandler: handler)
             orig.URLSession(session, dataTask: task, didReceiveData: cached)
-            SpotifyResponsePatcher.markCustomizeTaskHandled(task.taskIdentifier)
+            SpotifyResponsePatcher.markCustomizeTaskHandled(task)
             return
         }
 
@@ -256,7 +259,7 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             }
 
             writeDebugLog("[DL] Delivering custom lyrics for local track")
-            SpotifyResponsePatcher.markLyricsTaskHandled(task.taskIdentifier)
+            SpotifyResponsePatcher.markLyricsTaskHandled(task)
             DispatchQueue.main.async { [self] in
                 orig.URLSession(session, dataTask: task, didReceiveResponse: ok, completionHandler: handler)
                 orig.URLSession(session, dataTask: task, didReceiveData: lyricsData)

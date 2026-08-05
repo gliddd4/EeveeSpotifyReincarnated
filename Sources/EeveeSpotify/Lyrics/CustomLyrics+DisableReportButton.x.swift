@@ -49,7 +49,8 @@ class LyricsFullscreenViewControllerHook: ClassHook<UIViewController> {
         
         let headerView = Ivars<UIView>(target.view).headerView
         
-        if let reportButton = headerView.subviews(matching: "EncoreButton")[1] as? UIButton {
+        let encoreButtons = headerView.subviews(matching: "EncoreButton")
+        if encoreButtons.count > 1, let reportButton = encoreButtons[1] as? UIButton {
             reportButton.isEnabled = false
         }
     }

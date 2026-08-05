@@ -72,7 +72,14 @@ struct EeveeSettingsVersionView: View {
         
         .onAppear {
             Task {
-                try await loadVersion()
+                do {
+                    try await loadVersion()
+                } catch {
+                    // Network failure / GitHub rate limit: stop the spinner
+                    // instead of leaving "checking for update" up forever.
+                    // Empty string means "no update known", hiding the spinner.
+                    latestVersion = ""
+                }
             }
         }
     }

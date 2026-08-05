@@ -252,10 +252,16 @@ class LrclibLyricsRepository: LyricsRepository {
                 }
             }
             
-            let minute = Int(captures["minute"]!)!
-            let seconds = Float(captures["seconds"]!)!
-            let content = captures["content"]!
-            
+            // `minute` can match empty (\d*), so a malformed line like
+            // "[:12.34]text" must not force-unwrap nil and crash the fetch.
+            guard let minuteStr = captures["minute"],
+                  let secondsStr = captures["seconds"],
+                  let content = captures["content"],
+                  let minute = Int(minuteStr),
+                  let seconds = Float(secondsStr) else {
+                return nil
+            }
+
             return LyricsLineDto(
                 content: content.lyricsNoteIfEmpty,
                 offsetMs: Int(minute * 60 * 1000 + Int(seconds * 1000))

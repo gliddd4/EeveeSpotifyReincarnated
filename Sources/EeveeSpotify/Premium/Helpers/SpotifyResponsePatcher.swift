@@ -9,37 +9,41 @@ enum SpotifyResponsePatcher {
     // URLSession's concurrent delegate queues — all access is lock-guarded.
     private static let lock = NSLock()
     private static var _cachedCustomizeData: Data?
-    private static var _handledCustomizeTasks = Set<Int>()
+    // Keyed by task identity (ObjectIdentifier), not taskIdentifier: identifiers
+    // are only unique per URLSession and both hooked sessions run concurrently,
+    // so an identically-numbered task in the other session could suppress this
+    // task's completion and leave its consumer waiting forever.
+    private static var _handledCustomizeTasks = Set<ObjectIdentifier>()
 
     static var cachedCustomizeData: Data? {
         get { lock.lock(); defer { lock.unlock() }; return _cachedCustomizeData }
         set { lock.lock(); defer { lock.unlock() }; _cachedCustomizeData = newValue }
     }
 
-    static func markCustomizeTaskHandled(_ id: Int) {
+    static func markCustomizeTaskHandled(_ task: URLSessionTask) {
         lock.lock(); defer { lock.unlock() }
-        _handledCustomizeTasks.insert(id)
+        _handledCustomizeTasks.insert(ObjectIdentifier(task))
     }
 
-    // Returns true exactly once per id (the task that synthesized the replay).
-    static func consumeCustomizeTask(_ id: Int) -> Bool {
+    // Returns true exactly once per task (the task that synthesized the replay).
+    static func consumeCustomizeTask(_ task: URLSessionTask) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return _handledCustomizeTasks.remove(id) != nil
+        return _handledCustomizeTasks.remove(ObjectIdentifier(task)) != nil
     }
 
     // ── START OF AI GENERATED CODE ──
-    private static var _handledLyricsTasks = Set<Int>()
+    private static var _handledLyricsTasks = Set<ObjectIdentifier>()
 
-    static func markLyricsTaskHandled(_ id: Int) {
+    static func markLyricsTaskHandled(_ task: URLSessionTask) {
         lock.lock(); defer { lock.unlock() }
-        _handledLyricsTasks.insert(id)
+        _handledLyricsTasks.insert(ObjectIdentifier(task))
     }
 
-    // Returns true exactly once per id — prevents didCompleteWithError from
+    // Returns true exactly once per task — prevents didCompleteWithError from
     // re-delivering lyrics that didReceiveResponse already fully delivered.
-    static func consumeLyricsTask(_ id: Int) -> Bool {
+    static func consumeLyricsTask(_ task: URLSessionTask) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return _handledLyricsTasks.remove(id) != nil
+        return _handledLyricsTasks.remove(ObjectIdentifier(task)) != nil
     }
     // ── END OF AI GENERATED CODE ──
 

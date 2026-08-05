@@ -72,6 +72,13 @@ class SPTEncorePopUpPresenterHook: ClassHook<NSObject> {
 
         orig.presentPopUp(popUp)
     }
+
+    func dismissPopupWithAnimate(_ animate: Bool, clearQueue: Bool, completion: Any?) {
+        // Any dismissal (button click, outside-tap, Spotify-initiated) releases
+        // PopUpHelper's latch so it can't wedge and drop later popups.
+        PopUpHelper.resetIsPopUpShowing()
+        orig.dismissPopupWithAnimate(animate, clearQueue: clearQueue, completion: completion)
+    }
 }
 
 func activateUpsellPopupBlocker() {
