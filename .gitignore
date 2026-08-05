@@ -36,3 +36,8 @@ build_log.txt
 .website/
 .github/copilot-instructions.md
 scripts/spotify_symbol_diff.py
+
+# MetadataTagKit test harness
+Tests/MetadataTagKitTests/.build/
+Tests/MetadataTagKitTests/.swiftpm/
+Sources/EeveeSpotify/Dependencies/MetadataTagKit/.build/
