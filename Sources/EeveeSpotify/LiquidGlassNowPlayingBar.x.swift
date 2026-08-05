@@ -41,7 +41,7 @@ private func findNowPlayingBarPill(in root: UIView) -> UIView? {
     var best: UIView?
     var bestScore = -1
     var bestDepth = -1
-    var candidates: [(String, String, CGFloat)] = []
+    var candidates: [(String, String, Int)] = []
     var candidatesLogged = false
 
     func walk(_ view: UIView, depth: Int) {
