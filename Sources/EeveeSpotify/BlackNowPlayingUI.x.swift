@@ -2,7 +2,6 @@ import Orion
 import UIKit
 import QuartzCore
 import MediaPlayer
-import CoreImage
 
 struct BlackNowPlayingUIGroup: HookGroup {}
 
@@ -24,101 +23,80 @@ private var blackCoverURI: String? {
 }
 
 private let blackLuminanceThreshold = 0.2
+private let blackPixelRatioThreshold = 0.25
 
-// Shared CIContext so the Gaussian-blur + area-average work reuses the GPU
-// pipeline instead of paying per-call context creation.
-private let blackCoverCIContext = CIContext(options: [.workingColorSpace: NSNull()])
-
-/// Relative luminance (0...1) of a color; judges how "black" it reads.
-private func relativeLuminance(_ color: UIColor) -> Double {
-    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
-    guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return 1 }
-    return 0.2126 * Double(red) + 0.7152 * Double(green) + 0.0722 * Double(blue)
-}
-
-/// The album cover's dominant ("primary") color: the artwork is Gaussian-
-/// blurred to smooth out highlights, text and JPEG noise, then reduced to a
-/// 1x1 area average. Returns nil when no artwork is available (e.g. a local
-/// file without a cover).
-private func coverPrimaryColor() -> UIColor? {
+// Sample the album cover into a small fixed-size RGBA buffer so the black
+// analysis reads raw pixels instead of relying on CoreImage, which failed
+// silently on-device (CIContext with a null working color space rendered
+// nothing, leaving a zeroed buffer that read as pure black for every album).
+// Returns nil when no artwork is available (e.g. a local file without a
+// cover).
+private func sampleCoverRGBA(width: Int = 32, height: Int = 32) -> [UInt8]? {
     guard let info = MPNowPlayingInfoCenter.default().nowPlayingInfo,
           let artwork = info[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork,
-          let cover = artwork.image(at: CGSize(width: 128, height: 128)),
+          let cover = artwork.image(at: CGSize(width: 64, height: 64)),
           let cgImage = cover.cgImage else {
         return nil
     }
 
-    let input = CIImage(cgImage: cgImage)
-    let blurred = input
-        .clampedToExtent()
-        .applyingGaussianBlur(sigma: 8)
-        .cropped(to: input.extent)
-    let averaged = blurred.applyingFilter(
-        "CIAreaAverage",
-        parameters: [kCIInputExtentKey: CIVector(cgRect: input.extent)]
-    )
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    guard let context = CGContext(
+        data: &pixels,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            | CGBitmapInfo.byteOrder32Big.rawValue
+    ) else {
+        return nil
+    }
 
-    var pixel = [UInt8](repeating: 0, count: 4)
-    blackCoverCIContext.render(
-        averaged,
-        toBitmap: &pixel,
-        rowBytes: 4,
-        bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-        format: .RGBA8,
-        colorSpace: nil
-    )
-    return UIColor(
-        red: CGFloat(pixel[0]) / 255.0,
-        green: CGFloat(pixel[1]) / 255.0,
-        blue: CGFloat(pixel[2]) / 255.0,
-        alpha: 1.0
-    )
+    context.interpolationQuality = .high
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return pixels
 }
 
-/// Fraction of the current album cover's pixels that read as black
-/// (relative luminance below `blackLuminanceThreshold`).
-/// Returns 0 when no artwork is available (e.g. local file without a cover).
-private func albumCoverBlackRatio() -> Double {
-    guard let info = MPNowPlayingInfoCenter.default().nowPlayingInfo,
-          let artwork = info[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork else {
-        return 0
-    }
-
-    // Ask for a modest size — enough for a stable dark-ratio estimate.
-    let cover = artwork.image(at: CGSize(width: 64, height: 64))
-    guard cover != nil else { return 0 }
-
-    // Downscale to 32x32 (1024 pixels) for a cheap, representative sample.
-    let sampleSize = CGSize(width: 32, height: 32)
-    UIGraphicsBeginImageContextWithOptions(sampleSize, false, 1)
-    cover?.draw(in: CGRect(origin: .zero, size: sampleSize))
-    let sampled = UIGraphicsGetImageFromCurrentImageContext()
-    UIGraphicsEndImageContext()
-
-    guard let cgImage = sampled?.cgImage,
-          let data = cgImage.dataProvider?.data,
-          let bytes = CFDataGetBytePtr(data) else {
-        return 0
-    }
-
-    let bytesPerPixel = cgImage.bitsPerPixel / 8
-    guard bytesPerPixel >= 3 else { return 0 }
-
-    let total = cgImage.width * cgImage.height
+// Fraction of the sampled cover pixels that read as black (relative
+// luminance below `blackLuminanceThreshold`). Returns 0 when no artwork is
+// available (e.g. local file without a cover).
+private func coverBlackPixelRatio(_ pixels: [UInt8]) -> Double {
+    let total = pixels.count / 4
     guard total > 0 else { return 0 }
 
     var dark = 0
     for i in 0..<total {
-        let offset = i * bytesPerPixel
-        let r = Double(bytes[offset]) / 255.0
-        let g = Double(bytes[offset + 1]) / 255.0
-        let b = Double(bytes[offset + 2]) / 255.0
+        let offset = i * 4
+        let r = Double(pixels[offset]) / 255.0
+        let g = Double(pixels[offset + 1]) / 255.0
+        let b = Double(pixels[offset + 2]) / 255.0
         let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
         if luminance < blackLuminanceThreshold {
             dark += 1
         }
     }
     return Double(dark) / Double(total)
+}
+
+// Mean relative luminance of the sampled cover — a blur-equivalent estimate
+// of the artwork's overall darkness. Downscaling to 32x32 already smooths
+// out highlights, text and JPEG noise, which is what the removed Gaussian
+// blur was for. Returns 1 (light) when no artwork is available so a missing
+// cover never forces black on its own.
+private func coverMeanLuminance(_ pixels: [UInt8]) -> Double {
+    let total = pixels.count / 4
+    guard total > 0 else { return 1 }
+
+    var sum = 0.0
+    for i in 0..<total {
+        let offset = i * 4
+        let r = Double(pixels[offset]) / 255.0
+        let g = Double(pixels[offset + 1]) / 255.0
+        let b = Double(pixels[offset + 2]) / 255.0
+        sum += 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    return sum / Double(total)
 }
 
 private func shouldForceBlackGradient() -> Bool {
@@ -131,21 +109,31 @@ private func shouldForceBlackGradient() -> Bool {
     let uri = capturedTrackURI
         ?? statefulPlayer?.currentTrack().flatMap { ($0.URI() as? NSURL)?.absoluteString }
         ?? ""
-    if blackCoverURI == uri {
+    // Only treat an empty URI as a cache key when we have nothing better, and
+    // never cache a result under "" — that would freeze one album's verdict
+    // for every subsequent album.
+    if !uri.isEmpty, blackCoverURI == uri {
         return blackCoverIsMostlyBlack
     }
 
-    // A cover reads as "mostly black" when either the Gaussian-blurred
-    // primary color is dark (this catches uniform dark covers whose
-    // anti-aliased edges and JPEG noise hover just above the pixel
-    // threshold) or at least a quarter of its pixels are black.
-    let ratio = albumCoverBlackRatio()
-    let primaryLuminance = coverPrimaryColor().map(relativeLuminance)
-    let isMostlyBlack = (primaryLuminance.map { $0 < blackLuminanceThreshold } ?? false)
-        || ratio >= 0.25
-    blackCoverURI = uri
-    blackCoverIsMostlyBlack = isMostlyBlack
-    writeDebugLog("[BlackUI] cover primaryLum=\(primaryLuminance.map { String(format: "%.2f", $0) } ?? "nil") blackRatio=\(String(format: "%.2f", ratio)) for uri=\(uri) -> forceBlack=\(isMostlyBlack)")
+    // A cover reads as "mostly black" when either its overall (blur-equivalent)
+    // luminance is dark — this catches uniform dark covers whose anti-aliased
+    // edges and JPEG noise hover just above the pixel threshold — or at least
+    // a quarter of its pixels are black.
+    guard let pixels = sampleCoverRGBA() else {
+        writeDebugLog("[BlackUI] no artwork for uri=\(uri) -> forceBlack=false")
+        return false
+    }
+
+    let ratio = coverBlackPixelRatio(pixels)
+    let meanLuminance = coverMeanLuminance(pixels)
+    let isMostlyBlack = meanLuminance < blackLuminanceThreshold
+        || ratio >= blackPixelRatioThreshold
+    if !uri.isEmpty {
+        blackCoverURI = uri
+        blackCoverIsMostlyBlack = isMostlyBlack
+    }
+    writeDebugLog("[BlackUI] cover meanLum=\(String(format: "%.2f", meanLuminance)) blackRatio=\(String(format: "%.2f", ratio)) for uri=\(uri) -> forceBlack=\(isMostlyBlack)")
     return isMostlyBlack
 }
 
