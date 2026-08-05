@@ -565,6 +565,7 @@ struct EeveeSpotify: Tweak {
             NSLog("[EeveeSpotify] Initialization complete for 9.1.x")
             TrueShuffleHook.install()
             activateEeveeProbes()
+            activateCanvasArtworkPublisher()
             activateSponsorBlock()
             return
         }

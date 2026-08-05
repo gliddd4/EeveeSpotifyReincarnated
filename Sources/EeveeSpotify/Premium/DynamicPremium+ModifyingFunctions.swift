@@ -9,6 +9,12 @@ func modifyRemoteConfiguration(_ configuration: inout UcsResponse) {
     // and using a static bundled resolve config alone can regress back to Free tier.
     modifyAssignedValues(&configuration.assignedValues)
 
+    let canvasFlags = configuration.assignedValues
+        .filter { $0.propertyID.scope == "ios-feature-lockscreen" }
+        .map { "\($0.propertyID.name)=\($0.boolValue.value)" }
+        .sorted()
+    writeDebugLog("[CANVAS][CONFIG] final lockscreen flags: \(canvasFlags)")
+
     if UserDefaults.overwriteConfiguration {
         configuration.resolve.configuration = try! BundleHelper.shared.resolveConfiguration()
     }
@@ -239,6 +245,14 @@ private let propertyReplacements = [
     // ─────────────────────────────────────────────────────────────────────
     EeveePropertyReplacement(name: "embedded_npv_video_show_with_canvas", scope: "ios-feature-adsnowplayingui", modification: .setBool(false)),
 
+    // iOS 26 Lock Screen animated artwork. Spotify ships the Canvas-to-
+    // MPNowPlayingInfoCenter pipeline, but gates it behind these flags.
+    EeveePropertyReplacement(name: "animated_artwork_enabled", scope: "ios-feature-lockscreen", modification: .forceBool(true)),
+    EeveePropertyReplacement(name: "vit_artwork_enabled", scope: "ios-feature-lockscreen", modification: .forceBool(true)),
+    EeveePropertyReplacement(name: "fetch_next_track_artwork", scope: "ios-feature-lockscreen", modification: .forceBool(true)),
+    EeveePropertyReplacement(name: "reset_artwork_on_track_change_enabled", scope: "ios-feature-lockscreen", modification: .forceBool(true)),
+    EeveePropertyReplacement(name: "static_artwork_switch_to_latest_enabled", scope: "ios-feature-lockscreen", modification: .forceBool(true)),
+
     // ─────────────────────────────────────────────────────────────────────
     // Sponsored context (sponsored playlists in Now Playing bar)
     // ─────────────────────────────────────────────────────────────────────
@@ -345,6 +359,9 @@ private func modifyAssignedValues(_ values: inout [AssignedValue]) {
                 $0.propertyID = AssignedIdentifier.with { $0.scope = scope; $0.name = name }
                 $0.boolValue = BoolValue.with { $0.value = newValue }
             })
+            if scope == "ios-feature-lockscreen" {
+                writeDebugLog("[CANVAS][CONFIG] appended \(scope).\(name)=\(newValue)")
+            }
             continue
         }
 
@@ -361,6 +378,11 @@ private func modifyAssignedValues(_ values: inout [AssignedValue]) {
 
             case .forceBool(let newValue):
                 values[index].boolValue = BoolValue.with { $0.value = newValue }
+            }
+
+            if replacement.scope == "ios-feature-lockscreen",
+               let name = replacement.name {
+                writeDebugLog("[CANVAS][CONFIG] updated ios-feature-lockscreen.\(name)")
             }
         }
     }

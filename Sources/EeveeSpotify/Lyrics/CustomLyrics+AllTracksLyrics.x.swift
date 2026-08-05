@@ -239,6 +239,9 @@ class NPVScrollViewControllerURIHook: ClassHook<NSObject> {
         // (BaseLyricsGroup), which is skipped on 9.1.68 — so reload helpers that
         // guard on npvScrollViewController silently no-op there.
         npvScrollViewController = Dynamic.convert(target, to: NPVScrollViewController.self)
+        if let track = statefulPlayer?.currentTrack() {
+            captureCanvasTrack(track)
+        }
         shouldOverrideLocalTrackURI = true
         resetNPVScrollSettleState()
         orig.viewWillAppear(animated)
@@ -398,6 +401,7 @@ class NPVScrollViewControllerV91Hook: ClassHook<NSObject> {
         // statefulPlayer.currentTrack() as the primary source.
         let track = statefulPlayer?.currentTrack() ?? nowPlayingScrollViewController?.loadedTrack
         if let track = track {
+            captureCanvasTrack(track)
             let trackId = track.URI().spt_trackIdentifier()
             let title = track.trackTitle()
             let artist = track.artistName()

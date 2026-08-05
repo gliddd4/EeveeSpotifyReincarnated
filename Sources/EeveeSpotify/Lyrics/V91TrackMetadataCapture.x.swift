@@ -10,6 +10,7 @@ private let captureQueue = DispatchQueue(label: "com.eeveespotify.capture")
 private var _capturedTrackTitle: String?
 private var _capturedArtistName: String?
 private var _capturedTrackId: String?
+private var _capturedTrackURI: String?
 
 var capturedTrackTitle: String? {
     get { captureQueue.sync { _capturedTrackTitle } }
@@ -22,6 +23,26 @@ var capturedArtistName: String? {
 var capturedTrackId: String? {
     get { captureQueue.sync { _capturedTrackId } }
     set { captureQueue.sync { _capturedTrackId = newValue } }
+}
+var capturedTrackURI: String? {
+    get { captureQueue.sync { _capturedTrackURI } }
+    set { captureQueue.sync { _capturedTrackURI = newValue } }
+}
+
+func captureCanvasTrack(_ track: SPTPlayerTrack) {
+    let diagnosticsEnabled = requestCanvasNowPlayingProbe()
+    let uri = track.URI()
+    guard let uriString = (uri as? NSURL)?.absoluteString, !uriString.isEmpty else {
+        if diagnosticsEnabled {
+            writeDebugLog("[CANVAS][TRACK] missing URI for \(track.trackTitle())")
+        }
+        return
+    }
+
+    capturedTrackURI = uriString
+    if diagnosticsEnabled {
+        writeDebugLog("[CANVAS][TRACK] uri=\(uriString) title=\(track.trackTitle()) artist=\(track.artistName())")
+    }
 }
 
 // Per-track metadata cache populated synchronously by SPTPlayerTrackURIV91Hook
