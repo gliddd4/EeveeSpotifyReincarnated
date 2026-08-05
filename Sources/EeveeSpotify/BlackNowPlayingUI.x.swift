@@ -5,11 +5,14 @@ import MediaPlayer
 
 struct BlackNowPlayingUIGroup: HookGroup {}
 
-// Black-cover analysis cache, keyed by the captured track URI so a repeated
-// setColors: (layout pass, animation tick) reuses the last result instead of
-// re-scanning the cover image every time.
+// Black-cover analysis cache, keyed by the sampled artwork itself (not the
+// track URI) so a repeated setColors: (layout pass, animation tick) reuses the
+// last result instead of re-scanning the cover every time. Keying by URI went
+// stale: capturedTrackURI only fires on viewWillAppear, so in-session track
+// changes kept the old key and returned the first album's verdict until the
+// app was relaunched.
 private let blackCoverQueue = DispatchQueue(label: "com.eeveespotify.blackcover")
-private var _blackCoverURI: String?
+private var _blackCoverPixels: [UInt8]?
 private var _blackCoverIsMostlyBlack = false
 
 private var blackCoverIsMostlyBlack: Bool {
@@ -17,9 +20,9 @@ private var blackCoverIsMostlyBlack: Bool {
     set { blackCoverQueue.sync { _blackCoverIsMostlyBlack = newValue } }
 }
 
-private var blackCoverURI: String? {
-    get { blackCoverQueue.sync { _blackCoverURI } }
-    set { blackCoverQueue.sync { _blackCoverURI = newValue } }
+private var blackCoverPixels: [UInt8]? {
+    get { blackCoverQueue.sync { _blackCoverPixels } }
+    set { blackCoverQueue.sync { _blackCoverPixels = newValue } }
 }
 
 private let blackLuminanceThreshold = 0.2
@@ -102,17 +105,17 @@ private func coverMeanLuminance(_ pixels: [UInt8]) -> Double {
 private func shouldForceBlackGradient() -> Bool {
     guard UserDefaults.blackNowPlayingUI else { return false }
 
-    // Prefer the viewWillAppear-captured URI; fall back to the player's live
-    // track URI so the cache key stays unique even when the scroll-view hook
-    // did not fire for this playback path (e.g. Donda-style covers on builds
-    // where NPVScrollViewController is absent).
-    let uri = capturedTrackURI
-        ?? statefulPlayer?.currentTrack().flatMap { ($0.URI() as? NSURL)?.absoluteString }
-        ?? ""
-    // Only treat an empty URI as a cache key when we have nothing better, and
-    // never cache a result under "" — that would freeze one album's verdict
-    // for every subsequent album.
-    if !uri.isEmpty, blackCoverURI == uri {
+    guard let pixels = sampleCoverRGBA() else {
+        writeDebugLog("[BlackUI] no artwork -> forceBlack=false")
+        return false
+    }
+
+    // Same artwork as the last verdict (animation ticks, repeated layout
+    // passes) — reuse the result instead of re-scanning. On track change the
+    // artwork differs, so this cache miss recomputes for the new cover; the
+    // previous URI-keyed cache could not do that because capturedTrackURI is
+    // pinned to the first track's viewWillAppear and never updates.
+    if blackCoverPixels == pixels {
         return blackCoverIsMostlyBlack
     }
 
@@ -120,20 +123,16 @@ private func shouldForceBlackGradient() -> Bool {
     // luminance is dark — this catches uniform dark covers whose anti-aliased
     // edges and JPEG noise hover just above the pixel threshold — or at least
     // a quarter of its pixels are black.
-    guard let pixels = sampleCoverRGBA() else {
-        writeDebugLog("[BlackUI] no artwork for uri=\(uri) -> forceBlack=false")
-        return false
-    }
-
     let ratio = coverBlackPixelRatio(pixels)
     let meanLuminance = coverMeanLuminance(pixels)
     let isMostlyBlack = meanLuminance < blackLuminanceThreshold
         || ratio >= blackPixelRatioThreshold
-    if !uri.isEmpty {
-        blackCoverURI = uri
-        blackCoverIsMostlyBlack = isMostlyBlack
-    }
-    writeDebugLog("[BlackUI] cover meanLum=\(String(format: "%.2f", meanLuminance)) blackRatio=\(String(format: "%.2f", ratio)) for uri=\(uri) -> forceBlack=\(isMostlyBlack)")
+    blackCoverPixels = pixels
+    blackCoverIsMostlyBlack = isMostlyBlack
+    let uri = capturedTrackURI
+        ?? statefulPlayer?.currentTrack().flatMap { ($0.URI() as? NSURL)?.absoluteString }
+        ?? ""
+    writeDebugLog("[BlackUI] cover meanLum=\(String(format: "%.2f", meanLuminance)) blackRatio=\(String(format: "%.2f", ratio)) uri=\(uri) -> forceBlack=\(isMostlyBlack)")
     return isMostlyBlack
 }
 
