@@ -548,6 +548,20 @@ struct EeveeSpotify: Tweak {
                 if EeveeSpotify.hookTarget == .v91 {
                     patchLyricsCardGate()
                 }
+
+                // 9.1.x Show Fallback Reasons port: append a dimmed
+                // "Fallback: <reason>" line to the fullscreen lyrics header
+                // (Lyrics_FullscreenElementPageImpl.FullscreenElementViewController)
+                // and the now-playing album/playlist header
+                // (NowPlaying_ModesImpl.HeaderElementsUnit). Each group is
+                // guarded on its class existing so Orion never swizzles a
+                // missing target.
+                if NSClassFromString("NowPlaying_ModesImpl.HeaderElementsUnit") != nil {
+                    V91HeaderElementsFallbackReasonsGroup().activate()
+                    writeDebugLog("[INIT] Activated V91HeaderElementsFallbackReasonsGroup (now-playing header)")
+                } else {
+                    writeDebugLog("[INIT] Skipped V91HeaderElementsFallbackReasonsGroup (HeaderElementsUnit missing)")
+                }
                 // ── END OF AI GENERATED CODE ──
 
             }
