@@ -19,6 +19,10 @@ This tweak makes Spotify think you have a Premium subscription, granting free li
 - **LRCLIB**
 - **Genius**
 
+**Spotify 9.1.68 and above**
+
+- **Custom local file lyrics support**
+- **Show lyric fallback reasons toggle support**
 > [!NOTE]
 > All providers work now
 
