@@ -115,8 +115,10 @@ musixmatch_restricted_popup = "The tweak is unable to load lyrics from Musixmatc
 // Errors Titles
 
 no_such_song = "No Song Found";
-musixmatch_restricted = "Restricted";
-invalid_musixmatch_token = "Unauthorized";
+// ── START OF AI GENERATED CODE ──
+musixmatch_restricted = "Musixmatch Restricted";
+invalid_musixmatch_token = "Musixmatch Unauthorized";
+// ── END OF AI GENERATED CODE ──
 decoding_error = "Decoding Error";
 no_current_track = "No Track Instance";
 unknown_error = "Unknown Error";
