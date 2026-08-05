@@ -10,10 +10,12 @@ The feature implementation is squashed into `6602338` (along with the canvas
 work and the lyric refactor), then refined on top of this branch:
 
 - `Sources/EeveeSpotify/BlackNowPlayingUI.x.swift`
-  - `activateBlackNowPlayingUI()` (~line 109), toggle-read at activation.
-  - `shouldForceBlackGradient()` — mostly-black detection using the 25% black
-    threshold plus a per-URI cached hit/miss (avoids repeated histogram work
-    and fixes a stale-hit on Donda-style covers).
+  - `activateBlackNowPlayingUI()`, toggle-read at activation.
+  - `shouldForceBlackGradient()` — mostly-black detection: the cover's primary
+    color (Gaussian-blurred then reduced to a 1x1 `CIAreaAverage`) is judged
+    by relative luminance, OR'd with the 25%-black pixel ratio; cached
+    per-URI to avoid repeated histogram/blur work and stale hits on
+    Donda-style covers.
   - Reads `capturedTrackURI` (set by the canvas `captureCanvasTrack(_:)` hook in
     `V91TrackMetadataCapture.x.swift`) as the primary cache key.
 - `Sources/EeveeSpotify/Tweak.x.swift` — activation lines 527 (9.1.68 path) and
@@ -48,9 +50,9 @@ work and the lyric refactor), then refined on top of this branch:
   Master-impl tip `9ea68f5` (0.25 + live-URI fallback, no cast), and the final
   `c8321ab` stash blob (0.25 + live-URI fallback + NSURL cast). This branch
   now carries the final form.
-- **String drift**: both branches' `Localizable.strings` say "at least 50%
-  black" but the final threshold is 25%. If porting to Master, fix the string
-  to say 25% (or "mostly black").
+- **String drift**: fixed on this branch — the description now says "mostly
+  black" (previously claimed "at least 50% black" while the threshold was
+  25%).
 - Porting to Master requires an additive edit to
   `V91TrackMetadataCapture.x.swift` (add `capturedTrackURI` + a
   diagnostics-stripped `captureCanvasTrack(_:)`) — do NOT copy Master-impl's

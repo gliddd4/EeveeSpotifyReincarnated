@@ -2,6 +2,7 @@ import Orion
 import UIKit
 import QuartzCore
 import MediaPlayer
+import CoreImage
 
 struct BlackNowPlayingUIGroup: HookGroup {}
 
@@ -20,6 +21,58 @@ private var blackCoverIsMostlyBlack: Bool {
 private var blackCoverURI: String? {
     get { blackCoverQueue.sync { _blackCoverURI } }
     set { blackCoverQueue.sync { _blackCoverURI = newValue } }
+}
+
+private let blackLuminanceThreshold = 0.2
+
+// Shared CIContext so the Gaussian-blur + area-average work reuses the GPU
+// pipeline instead of paying per-call context creation.
+private let blackCoverCIContext = CIContext(options: [.workingColorSpace: NSNull()])
+
+/// Relative luminance (0...1) of a color; judges how "black" it reads.
+private func relativeLuminance(_ color: UIColor) -> Double {
+    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+    guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return 1 }
+    return 0.2126 * Double(red) + 0.7152 * Double(green) + 0.0722 * Double(blue)
+}
+
+/// The album cover's dominant ("primary") color: the artwork is Gaussian-
+/// blurred to smooth out highlights, text and JPEG noise, then reduced to a
+/// 1x1 area average. Returns nil when no artwork is available (e.g. a local
+/// file without a cover).
+private func coverPrimaryColor() -> UIColor? {
+    guard let info = MPNowPlayingInfoCenter.default().nowPlayingInfo,
+          let artwork = info[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork,
+          let cover = artwork.image(at: CGSize(width: 128, height: 128)),
+          let cgImage = cover.cgImage else {
+        return nil
+    }
+
+    let input = CIImage(cgImage: cgImage)
+    let blurred = input
+        .clampedToExtent()
+        .applyingGaussianBlur(sigma: 8)
+        .cropped(to: input.extent)
+    let averaged = blurred.applyingFilter(
+        "CIAreaAverage",
+        parameters: [kCIInputExtentKey: CIVector(cgRect: input.extent)]
+    )
+
+    var pixel = [UInt8](repeating: 0, count: 4)
+    blackCoverCIContext.render(
+        averaged,
+        toBitmap: &pixel,
+        rowBytes: 4,
+        bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+        format: .RGBA8,
+        colorSpace: nil
+    )
+    return UIColor(
+        red: CGFloat(pixel[0]) / 255.0,
+        green: CGFloat(pixel[1]) / 255.0,
+        blue: CGFloat(pixel[2]) / 255.0,
+        alpha: 1.0
+    )
 }
 
 /// Fraction of the current album cover's pixels that read as black
@@ -61,7 +114,7 @@ private func albumCoverBlackRatio() -> Double {
         let g = Double(bytes[offset + 1]) / 255.0
         let b = Double(bytes[offset + 2]) / 255.0
         let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-        if luminance < 0.2 {
+        if luminance < blackLuminanceThreshold {
             dark += 1
         }
     }
@@ -82,11 +135,18 @@ private func shouldForceBlackGradient() -> Bool {
         return blackCoverIsMostlyBlack
     }
 
+    // A cover reads as "mostly black" when either the Gaussian-blurred
+    // primary color is dark (this catches uniform dark covers whose
+    // anti-aliased edges and JPEG noise hover just above the pixel
+    // threshold) or at least a quarter of its pixels are black.
     let ratio = albumCoverBlackRatio()
+    let primaryLuminance = coverPrimaryColor().map(relativeLuminance)
+    let isMostlyBlack = (primaryLuminance.map { $0 < blackLuminanceThreshold } ?? false)
+        || ratio >= 0.25
     blackCoverURI = uri
-    blackCoverIsMostlyBlack = ratio >= 0.25
-    writeDebugLog("[BlackUI] cover blackRatio=\(String(format: "%.2f", ratio)) for uri=\(uri) -> forceBlack=\(blackCoverIsMostlyBlack)")
-    return blackCoverIsMostlyBlack
+    blackCoverIsMostlyBlack = isMostlyBlack
+    writeDebugLog("[BlackUI] cover primaryLum=\(primaryLuminance.map { String(format: "%.2f", $0) } ?? "nil") blackRatio=\(String(format: "%.2f", ratio)) for uri=\(uri) -> forceBlack=\(isMostlyBlack)")
+    return isMostlyBlack
 }
 
 private func isNowPlayingGradientLayer(_ layer: CAGradientLayer) -> Bool {

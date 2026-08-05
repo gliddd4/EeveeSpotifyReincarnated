@@ -84,7 +84,7 @@ static_color = "Static Color";
 color_normalization_factor = "Color Normalization Factor";
 dark_popups = "Dark PopUps";
 black_now_playing_ui = "Black Now Playing UI";
-black_now_playing_ui_description = "Makes the now-playing background gradient all black for album covers that are at least 50% black.";
+black_now_playing_ui_description = "Makes the now-playing background gradient all black for album covers that are mostly black.";
 
 // Experiments
 
