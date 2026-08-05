@@ -34,25 +34,38 @@ func activateLiquidGlassNowPlayingBar() {
 
 // The bar's VC is a full-screen container; the mini player pill is one of its
 // subviews — a full-width ~56pt capsule pinned near the bottom. The shadow
-// view (expanded 4pt beyond every edge, so wider than the screen) and the
-// wrapper (no corner radius) are structurally excluded.
+// view (expanded 4pt beyond every edge) and the full-width containers it sits
+// inside are structurally excluded by scoring.
 private func findNowPlayingBarPill(in root: UIView) -> UIView? {
     let screen = UIScreen.main.bounds
     var best: UIView?
     var bestScore = -1
     var bestDepth = -1
+    var candidates: [(String, String, CGFloat)] = []
+    var candidatesLogged = false
 
     func walk(_ view: UIView, depth: Int) {
         let frame = view.frame
+        // The pill is nested (frame is in its superview's coordinates), so the
+        // bottom-of-screen check must use window coordinates, not view.frame.
+        let windowFrame = view.convert(view.bounds, to: nil)
         let isPillShape = frame.height >= 48 && frame.height <= 64
             && frame.width >= screen.width - 24 && frame.width <= screen.width + 2
-            && frame.maxY >= screen.height * 0.75 && frame.maxY <= screen.height + 8
-        let score = (isPillShape ? 1 : 0) + (view.layer.cornerRadius > 0 ? 1 : 0)
+            && windowFrame.maxY >= screen.height * 0.75 && windowFrame.maxY <= screen.height + 8
+        // An opaque background (album-art fill) separates the pill from the
+        // transparent outline/glow view that surrounds it.
+        let hasFill = (view.backgroundColor?.cgColor.alpha ?? 0) > 0
+        let score = (isPillShape ? 1 : 0) + (view.layer.cornerRadius > 0 ? 1 : 0) + (hasFill ? 1 : 0)
 
-        if score > 0, score > bestScore || (score == bestScore && depth > bestDepth) {
-            best = view
-            bestScore = score
-            bestDepth = depth
+        if score > 0 {
+            if !candidatesLogged {
+                candidates.append((NSStringFromClass(type(of: view)), "\(frame)", score))
+            }
+            if score > bestScore || (score == bestScore && depth > bestDepth) {
+                best = view
+                bestScore = score
+                bestDepth = depth
+            }
         }
         for sub in view.subviews {
             walk(sub, depth: depth + 1)
@@ -60,8 +73,14 @@ private func findNowPlayingBarPill(in root: UIView) -> UIView? {
     }
 
     walk(root, depth: 0)
+    if !candidates.isEmpty {
+        for (name, frame, score) in candidates {
+            writeDebugLog("[LiquidGlassNPB] Candidate: \(name) frame=\(frame) score=\(score)")
+        }
+        candidatesLogged = true
+    }
     if let best {
-        writeDebugLog("[LiquidGlassNPB] Pill: \(NSStringFromClass(type(of: best))) frame=\(best.frame) cornerRadius=\(best.layer.cornerRadius)")
+        writeDebugLog("[LiquidGlassNPB] Pill: \(NSStringFromClass(type(of: best))) frame=\(best.frame) windowFrame=\(best.convert(best.bounds, to: nil)) cornerRadius=\(best.layer.cornerRadius) bg=\(String(describing: best.backgroundColor))")
     }
     return best
 }
