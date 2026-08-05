@@ -567,6 +567,7 @@ struct EeveeSpotify: Tweak {
             activateEeveeProbes()
             activateCanvasArtworkPublisher()
             activateSponsorBlock()
+            activateLiquidGlassNowPlayingBar()
             return
         }
 
@@ -578,6 +579,8 @@ struct EeveeSpotify: Tweak {
         if UserDefaults.darkPopUps {
             DarkPopUps().activate()
         }
+        
+        activateLiquidGlassNowPlayingBar()
         
         if UserDefaults.patchType.isPatching {
             activatePremiumPatchingGroup()

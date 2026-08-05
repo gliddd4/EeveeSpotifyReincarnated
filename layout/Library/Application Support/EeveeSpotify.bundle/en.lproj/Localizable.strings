@@ -291,3 +291,5 @@ managingSegmentsSectionDeps2 = "Settings → 'Reporting & drafts' holds your in-
 categoriesTitle = "Categories";
 categoriesSectionTitle1 = "Per-category actions";
 categoriesSectionDeps1 = "Off = ignore. Show = draw on the bar only. Manual = prompt before skipping. Auto = skip silently.";
+liquid_glass_now_playing_bar = "Liquid Glass now playing bar";
+liquid_glass_now_playing_bar_description = "Renders the now playing bar with the iOS 26 Liquid Glass material. Requires iOS 26; restart Spotify after changing.";

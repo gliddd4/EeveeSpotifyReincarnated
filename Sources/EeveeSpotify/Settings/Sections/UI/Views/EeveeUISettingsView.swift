@@ -58,6 +58,18 @@ struct EeveeUISettingsView: View {
                 )
             }
             
+            Section(
+                footer: Text("liquid_glass_now_playing_bar_description".localized)
+            ) {
+                Toggle(
+                    "liquid_glass_now_playing_bar".localized,
+                    isOn: Binding<Bool>(
+                        get: { UserDefaults.liquidGlassNowPlayingBar },
+                        set: { UserDefaults.liquidGlassNowPlayingBar = $0 }
+                    )
+                )
+            }
+            
             SpacerView()
         }
         
