@@ -7,6 +7,7 @@ import UIKit
 struct LiquidGlassNowPlayingBarGroup: HookGroup { }
 
 private var liquidGlassAppliedKey = 0
+private weak var appliedPill: UIView?
 
 func activateLiquidGlassNowPlayingBar() {
     guard UserDefaults.liquidGlassNowPlayingBar else {
@@ -30,48 +31,59 @@ func activateLiquidGlassNowPlayingBar() {
     writeDebugLog("[LiquidGlassNPB] Activated")
 }
 
-// Locates the floating pill (NowPlaying_BarImpl.NowPlayingBarView). Falls back
-// to a frame heuristic (56pt tall, ~8pt horizontal inset) so it survives the
-// Swift-mangled class name changing between Spotify builds.
+// Locates the floating pill (NowPlaying_BarImpl.NowPlayingBarView).
+//
+// Two-tier scoring: a view whose class name contains "NowPlayingBarView" always
+// beats a frame-only match, so a name-matched pill can't lose to a larger
+// wrapper container that happens to satisfy the frame signature. Among equal
+// scores the deepest match wins (the pill, not its parent). The frame arm
+// (56pt tall, ~8pt inset) is the fallback when the class name changes between
+// Spotify builds.
 private func findNowPlayingBarPill(in root: UIView) -> UIView? {
     var best: UIView?
+    var bestScore = 0
+    var bestDepth = -1
     let screenWidth = UIScreen.main.bounds.width
 
-    func walk(_ view: UIView) {
+    func walk(_ view: UIView, depth: Int) {
         let name = NSStringFromClass(type(of: view))
         let inset = view.frame.minX
         let isInsetPill = view.bounds.height >= 48 && view.bounds.height <= 64
             && inset >= 4 && inset <= 16
             && view.frame.width >= screenWidth - 24
+        let score = (name.contains("NowPlayingBarView") ? 2 : 0) + (isInsetPill ? 1 : 0)
 
-        if name.contains("NowPlayingBarView") || isInsetPill {
-            let area = view.bounds.width * view.bounds.height
-            if best == nil || area > best!.bounds.width * best!.bounds.height {
-                best = view
-            }
+        if score > 0, score > bestScore || (score == bestScore && depth > bestDepth) {
+            best = view
+            bestScore = score
+            bestDepth = depth
         }
         for sub in view.subviews {
-            walk(sub)
+            walk(sub, depth: depth + 1)
         }
     }
 
-    walk(root)
+    walk(root, depth: 0)
+    if let best {
+        writeDebugLog("[LiquidGlassNPB] Pill candidate: \(NSStringFromClass(type(of: best)))")
+    }
     return best
 }
 
+// The cleanup half is idempotent and re-runs on every layout pass, so content
+// Spotify adds after our first pass can never cover the glass. Only the glass
+// insertion is one-shot (guarded by the associated object).
 @available(iOS 26.0, *)
 private func applyLiquidGlass(toPill pill: UIView) {
-    if objc_getAssociatedObject(pill, &liquidGlassAppliedKey) != nil {
-        return
-    }
-    objc_setAssociatedObject(pill, &liquidGlassAppliedKey, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    let applied = objc_getAssociatedObject(pill, &liquidGlassAppliedKey) != nil
 
     // Spotify draws its border/shadow/glow on a view expanded ~4pt beyond the
-    // pill. Hide it so the Liquid Glass material owns the edge.
+    // pill (382x64 vs 374x56). Hide only views expanded on ALL sides so we
+    // never touch legitimately overflowing content (artwork bleed, knobs).
     for sub in pill.subviews
-        where sub.frame.minX < -0.5 || sub.frame.minY < -0.5
-            || sub.frame.width > pill.bounds.width + 0.5
-            || sub.frame.height > pill.bounds.height + 0.5 {
+        where sub.frame.minX <= -2 && sub.frame.minY <= -2
+            && sub.frame.maxX >= pill.bounds.maxX + 2
+            && sub.frame.maxY >= pill.bounds.maxY + 2 {
         sub.isHidden = true
     }
 
@@ -93,6 +105,8 @@ private func applyLiquidGlass(toPill pill: UIView) {
         gradient.colors = nil
     }
 
+    guard !applied else { return }
+
     let glassEffect = UIGlassEffect(style: .regular)
     glassEffect.isInteractive = true
     let glass = UIVisualEffectView(effect: glassEffect)
@@ -108,6 +122,9 @@ private func applyLiquidGlass(toPill pill: UIView) {
         glass.topAnchor.constraint(equalTo: pill.topAnchor),
         glass.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
     ])
+
+    objc_setAssociatedObject(pill, &liquidGlassAppliedKey, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    appliedPill = pill
 }
 
 class NowPlayingBarViewControllerHook: ClassHook<UIViewController> {
@@ -118,7 +135,7 @@ class NowPlayingBarViewControllerHook: ClassHook<UIViewController> {
         orig.viewDidLayoutSubviews()
 
         if #available(iOS 26.0, *),
-           let pill = findNowPlayingBarPill(in: target.view) {
+           let pill = appliedPill ?? findNowPlayingBarPill(in: target.view) {
             applyLiquidGlass(toPill: pill)
         }
     }
