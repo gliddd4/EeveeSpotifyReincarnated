@@ -141,6 +141,52 @@ private func isNowPlayingGradientLayer(_ layer: CAGradientLayer) -> Bool {
     return NSStringFromClass(type(of: view)).contains("NPVGradientView")
 }
 
+// --- Delayed re-check state ---
+// MPNowPlayingInfoCenter artwork settles shortly after the gradient's
+// setColors: fires on track change, so the first verdict can be computed
+// from the previous track's cover and the gradient stays stale until the
+// app relaunches (relaunch resets the cache globals). When setColors fires
+// we schedule a short re-check loop: each tick re-samples the artwork and,
+// once it has settled on the new cover, flips the gradient to match. The
+// loop is bounded so a track with no artwork (or a switch to nothing) can't
+// keep it running forever; any later setColors: reschedules a fresh loop.
+private let gradientRecheckInterval: TimeInterval = 1.5
+private let gradientRecheckMaxAttempts = 6
+
+private var gradientRecheckHook: NowPlayingGradientLayerHook?
+private var gradientRecheckOriginalColors: [CGColor]?
+private var gradientRecheckAppliedBlack = false
+private var gradientRecheckAttempt = 0
+private var gradientRecheckWorkItem: DispatchWorkItem?
+
+private func scheduleGradientRecheck() {
+    gradientRecheckWorkItem?.cancel()
+    let item = DispatchWorkItem { runGradientRecheck() }
+    gradientRecheckWorkItem = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + gradientRecheckInterval, execute: item)
+}
+
+private func runGradientRecheck() {
+    gradientRecheckWorkItem = nil
+    guard let hook = gradientRecheckHook else { return }
+
+    let forceBlack = shouldForceBlackGradient()
+    if forceBlack != gradientRecheckAppliedBlack {
+        // Verdict flipped — the artwork has settled on a new cover. Apply it
+        // and stop watching; the next setColors: starts a fresh loop.
+        gradientRecheckAppliedBlack = forceBlack
+        let colors = forceBlack
+            ? [UIColor.black.cgColor, UIColor.black.cgColor]
+            : gradientRecheckOriginalColors
+        hook.orig.setColors(colors)
+        writeDebugLog("[BlackUI] recheck flipped gradient -> forceBlack=\(forceBlack)")
+    } else if gradientRecheckAttempt < gradientRecheckMaxAttempts {
+        // Artwork may still be settling (or still missing) — try again.
+        gradientRecheckAttempt += 1
+        scheduleGradientRecheck()
+    }
+}
+
 // Intercepts every gradient color application in the app, but only overrides
 // layers owned by the now-playing gradient views (NowPlaying_ScrollImpl /
 // NowPlaying_MixingTransitionImpl.NPVGradientView). Spotify's own colors are
@@ -151,9 +197,16 @@ class NowPlayingGradientLayerHook: ClassHook<CAGradientLayer> {
     static let targetName = "CAGradientLayer"
 
     func setColors(_ colors: [CGColor]?) {
-        if isNowPlayingGradientLayer(target), shouldForceBlackGradient() {
-            orig.setColors([UIColor.black.cgColor, UIColor.black.cgColor])
-            return
+        if isNowPlayingGradientLayer(target) {
+            gradientRecheckHook = self
+            gradientRecheckOriginalColors = colors
+            gradientRecheckAppliedBlack = shouldForceBlackGradient()
+            gradientRecheckAttempt = 0
+            scheduleGradientRecheck()
+            if gradientRecheckAppliedBlack {
+                orig.setColors([UIColor.black.cgColor, UIColor.black.cgColor])
+                return
+            }
         }
         orig.setColors(colors)
     }
