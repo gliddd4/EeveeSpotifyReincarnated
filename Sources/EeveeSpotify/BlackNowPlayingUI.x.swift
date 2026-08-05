@@ -1,234 +1,97 @@
 import Orion
 import UIKit
 import QuartzCore
-import MediaPlayer
 
 struct BlackNowPlayingUIGroup: HookGroup {}
 
-// Black-cover analysis cache, keyed by the live track's URI. The lyrics and
-// header pipelines never read MPNowPlayingInfoCenter for the current track —
-// it stays pinned to the first track until the app relaunches. Instead they
-// read the live player track (statefulPlayer.currentTrack()), whose
-// metadata()["extracted_color"] is refreshed per track. Keying the cache by
-// that live URI means a track switch always misses the cache and re-evaluates
-// the new cover, so the verdict can never stick to the first album.
-private let blackCoverQueue = DispatchQueue(label: "com.eeveespotify.blackcover")
-private var _blackCoverURI: String?
-private var _blackCoverPixels: [UInt8]?
-private var _blackCoverIsMostlyBlack = false
-
-private var blackCoverURI: String? {
-    get { blackCoverQueue.sync { _blackCoverURI } }
-    set { blackCoverQueue.sync { _blackCoverURI = newValue } }
-}
-
-private var blackCoverIsMostlyBlack: Bool {
-    get { blackCoverQueue.sync { _blackCoverIsMostlyBlack } }
-    set { blackCoverQueue.sync { _blackCoverIsMostlyBlack = newValue } }
-}
-
-private var blackCoverPixels: [UInt8]? {
-    get { blackCoverQueue.sync { _blackCoverPixels } }
-    set { blackCoverQueue.sync { _blackCoverPixels = newValue } }
-}
-
+// The verdict and the gradient layers it applies to. The gradient layers are
+// discovered through the CAGradientLayer.setColors: hook (both
+// NowPlaying_ScrollImpl.NPVGradientView and NowPlaying_MixingTransitionImpl
+// expose a CAGradientLayer with a NPVGradientView delegate); the verdict is
+// driven by NPVBackgroundViewController.backgroundViewModel:didChangeColor:
+// playerState:, which the header fires once per track switch with the new
+// album color — the same per-track signal the header/lyrics features use
+// instead of the laggy statefulPlayer.currentTrack() or the (first-track
+// pinned) MPNowPlayingInfoCenter artwork.
 private let blackLuminanceThreshold = 0.2
-private let blackPixelRatioThreshold = 0.25
 
-// Relative luminance of a hex color string (#RRGGBB / #RGB). Returns nil for
-// unparseable input.
-private func hexLuminance(_ hex: String) -> Double? {
-    let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-    var int: UInt64 = 0
-    Scanner(string: cleaned).scanHexInt64(&int)
-    let r, g, b: UInt64
-    switch cleaned.count {
-    case 3:
-        (r, g, b) = ((int >> 8) * 17, ((int >> 4) & 0xF) * 17, (int & 0xF) * 17)
-    case 6, 8:
-        (r, g, b) = (int >> 16, (int >> 8) & 0xFF, int & 0xFF)
-    default:
-        return nil
+private let gradientLayerLock = NSLock()
+private let gradientLayers = NSHashTable<CAGradientLayer>.weakObjects()
+private var originalColorsByLayer: [ObjectIdentifier: [CGColor]] = [:]
+
+private var forceBlackVerdict = false
+private var lastAppliedVerdict = false
+
+private func registerGradientLayer(_ layer: CAGradientLayer, originalColors: [CGColor]?) {
+    gradientLayerLock.lock(); defer { gradientLayerLock.unlock() }
+    gradientLayers.add(layer)
+    if let colors = originalColors {
+        originalColorsByLayer[ObjectIdentifier(layer)] = colors
     }
-    return 0.2126 * Double(r) / 255 + 0.7152 * Double(g) / 255 + 0.0722 * Double(b) / 255
 }
 
-// The live track's server-side extracted album color, mirroring how the lyrics
-// pipeline resolves it (resolvedTrackExtractedColor). This is the canonical
-// color source the header/lyrics use and it is refreshed per track, so it can
-// never go stale the way MPNowPlayingInfoCenter artwork does.
-private func liveTrackExtractedColorHex() -> String? {
-    guard let track = statefulPlayer?.currentTrack() else { return nil }
-    let nsTrack = track as AnyObject
-    let metaSelector = Selector(("metadata"))
-    guard nsTrack.responds(to: metaSelector) else { return nil }
-    let meta = track.metadata()
-    if let hex = meta["extracted_color"], !hex.isEmpty {
-        return hex
-    }
-    let colorSelector = Selector(("extractedColorHex"))
-    guard nsTrack.responds(to: colorSelector) else { return nil }
-    if let hex = track.extractedColorHex(), !hex.isEmpty {
-        return hex
-    }
-    return nil
+// Relative luminance of a UIColor (0 = pure black, 1 = pure white). Returns
+// nil when the color isn't in a convertible (RGB) color space.
+private func colorLuminance(_ color: UIColor) -> Double? {
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    guard color.getRed(&r, green: &g, blue: &b, alpha: &a) else { return nil }
+    return 0.2126 * Double(r) + 0.7152 * Double(g) + 0.0722 * Double(b)
 }
 
-// Identity of the currently playing track, from the live player state (never
-// stale). Falls back to the captured URI for logging/cache keying when the
-// player is unavailable.
-private func liveTrackURIString() -> String {
-    if let uri = statefulPlayer?.currentTrack().flatMap({ ($0.URI() as? NSURL)?.absoluteString }),
-       !uri.isEmpty {
-        return uri
-    }
-    if let captured = capturedTrackURI, !captured.isEmpty {
-        return captured
-    }
-    return ""
-}
+// Applies the current verdict to every registered now-playing gradient layer.
+// Layers that should be black get pure black; layers that shouldn't get the
+// last original colors Spotify applied (so the gradient reverts to the album
+// colors). Only touches layers when the verdict actually changed, so repeated
+// triggers (setColors: fires per layout/animation tick) don't fight Spotify's
+// own animations.
+private func applyVerdict() {
+    guard forceBlackVerdict != lastAppliedVerdict else { return }
+    lastAppliedVerdict = forceBlackVerdict
 
-// Sample the album cover into a small fixed-size RGBA buffer so the black
-// analysis reads raw pixels instead of relying on CoreImage, which failed
-// silently on-device (CIContext with a null working color space rendered
-// nothing, leaving a zeroed buffer that read as pure black for every album).
-// Returns nil when no artwork is available (e.g. a local file without a
-// cover).
-private func sampleCoverRGBA(width: Int = 32, height: Int = 32) -> [UInt8]? {
-    guard let info = MPNowPlayingInfoCenter.default().nowPlayingInfo,
-          let artwork = info[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork,
-          let cover = artwork.image(at: CGSize(width: 64, height: 64)),
-          let cgImage = cover.cgImage else {
-        return nil
-    }
+    gradientLayerLock.lock()
+    let layers = gradientLayers.allObjects
+    gradientLayerLock.unlock()
 
-    var pixels = [UInt8](repeating: 0, count: width * height * 4)
-    guard let context = CGContext(
-        data: &pixels,
-        width: width,
-        height: height,
-        bitsPerComponent: 8,
-        bytesPerRow: width * 4,
-        space: CGColorSpaceCreateDeviceRGB(),
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            | CGBitmapInfo.byteOrder32Big.rawValue
-    ) else {
-        return nil
-    }
-
-    context.interpolationQuality = .high
-    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-    return pixels
-}
-
-// Fraction of the sampled cover pixels that read as black (relative
-// luminance below `blackLuminanceThreshold`). Returns 0 when no artwork is
-// available (e.g. local file without a cover).
-private func coverBlackPixelRatio(_ pixels: [UInt8]) -> Double {
-    let total = pixels.count / 4
-    guard total > 0 else { return 0 }
-
-    var dark = 0
-    for i in 0..<total {
-        let offset = i * 4
-        let r = Double(pixels[offset]) / 255.0
-        let g = Double(pixels[offset + 1]) / 255.0
-        let b = Double(pixels[offset + 2]) / 255.0
-        let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-        if luminance < blackLuminanceThreshold {
-            dark += 1
+    let apply = {
+        for layer in layers {
+            if forceBlackVerdict {
+                layer.colors = [UIColor.black.cgColor, UIColor.black.cgColor]
+            } else if let originals = originalColorsByLayer[ObjectIdentifier(layer)] {
+                layer.colors = originals
+            }
         }
     }
-    return Double(dark) / Double(total)
+    if Thread.isMainThread {
+        apply()
+    } else {
+        DispatchQueue.main.async(execute: apply)
+    }
 }
 
-// Mean relative luminance of the sampled cover — a blur-equivalent estimate
-// of the artwork's overall darkness. Downscaling to 32x32 already smooths
-// out highlights, text and JPEG noise, which is what the removed Gaussian
-// blur was for. Returns 1 (light) when no artwork is available so a missing
-// cover never forces black on its own.
-private func coverMeanLuminance(_ pixels: [UInt8]) -> Double {
-    let total = pixels.count / 4
-    guard total > 0 else { return 1 }
-
-    var sum = 0.0
-    for i in 0..<total {
-        let offset = i * 4
-        let r = Double(pixels[offset]) / 255.0
-        let g = Double(pixels[offset + 1]) / 255.0
-        let b = Double(pixels[offset + 2]) / 255.0
-        sum += 0.2126 * r + 0.7152 * g + 0.0722 * b
-    }
-    return sum / Double(total)
+// Updates the verdict from a freshly resolved album color (the header's
+// didChangeColor argument, or the header view model's live color), then
+// applies it to the gradient layers.
+private func evaluateVerdict(from color: UIColor, source: String) {
+    guard UserDefaults.blackNowPlayingUI,
+          let luminance = colorLuminance(color) else { return }
+    forceBlackVerdict = luminance < blackLuminanceThreshold
+    writeDebugLog("[BlackUI] \(source) lum=\(String(format: "%.2f", luminance)) -> forceBlack=\(forceBlackVerdict)")
+    applyVerdict()
 }
 
-private func shouldForceBlackGradient() -> Bool {
-    guard UserDefaults.blackNowPlayingUI else { return false }
-
-    // Primary path: the live track's extracted album color — the same source
-    // the header/lyrics use. It is refreshed per track, so a track switch
-    // immediately yields the new cover's verdict with no staleness window.
-    if let hex = liveTrackExtractedColorHex(), let luminance = hexLuminance(hex) {
-        let isMostlyBlack = luminance < blackLuminanceThreshold
-        writeDebugLog("[BlackUI] extractedColor=\(hex) lum=\(String(format: "%.2f", luminance)) uri=\(liveTrackURIString()) -> forceBlack=\(isMostlyBlack)")
-        return isMostlyBlack
-    }
-
-    // Fallback: pixel-sample the now-playing artwork (no extracted color, e.g.
-    // local files). The cache is keyed by the live track URI, so a track
-    // switch invalidates the previous verdict and re-samples the new cover.
-    guard let pixels = sampleCoverRGBA() else {
-        writeDebugLog("[BlackUI] no artwork -> forceBlack=false")
-        return false
-    }
-
-    let uri = liveTrackURIString()
-    if blackCoverURI != uri {
-        blackCoverURI = uri
-        blackCoverPixels = nil
-    }
-
-    if blackCoverPixels == pixels {
-        return blackCoverIsMostlyBlack
-    }
-
-    // A cover reads as "mostly black" when either its overall (blur-equivalent)
-    // luminance is dark — this catches uniform dark covers whose anti-aliased
-    // edges and JPEG noise hover just above the pixel threshold — or at least
-    // a quarter of its pixels are black.
-    let ratio = coverBlackPixelRatio(pixels)
-    let meanLuminance = coverMeanLuminance(pixels)
-    let isMostlyBlack = meanLuminance < blackLuminanceThreshold
-        || ratio >= blackPixelRatioThreshold
-    blackCoverPixels = pixels
-    blackCoverIsMostlyBlack = isMostlyBlack
-    writeDebugLog("[BlackUI] cover meanLum=\(String(format: "%.2f", meanLuminance)) blackRatio=\(String(format: "%.2f", ratio)) uri=\(uri) -> forceBlack=\(isMostlyBlack)")
-    return isMostlyBlack
-}
-
-private func isNowPlayingGradientLayer(_ layer: CAGradientLayer) -> Bool {
-    guard let view = layer.delegate as? UIView else { return false }
-    return NSStringFromClass(type(of: view)).contains("NPVGradientView")
-}
-
-// --- Delayed re-check state ---
-// Safety net for the case where the gradient's setColors: fires before the
-// live track object is committed: each tick re-evaluates shouldForceBlackGradient()
-// (which reads the live track, so it is fresh per call) and flips the gradient
-// when the verdict changes. The loop is bounded so a track with no artwork can't
-// keep it running forever; any later setColors: with a new track starts a fresh
-// loop.
+// --- Bounded re-check ---
+// Safety net for ordering races: didChangeColor and setColors: can arrive in
+// either order around a track switch, and the header's color may settle after
+// the gradient is painted. Each run re-reads the header's live color (the
+// same value the didChangeColor callback carries) and re-applies if the
+// verdict flipped. Never reschedules over a pending work item — setColors:
+// fires on every layout/animation tick, and cancelling here would starve the
+// re-check forever.
 private let gradientRecheckInterval: TimeInterval = 1.5
 private let gradientRecheckMaxAttempts = 6
-
-private var gradientRecheckHook: NowPlayingGradientLayerHook?
-private var gradientRecheckOriginalColors: [CGColor]?
-private var gradientRecheckAppliedBlack = false
 private var gradientRecheckAttempt = 0
 private var gradientRecheckWorkItem: DispatchWorkItem?
 
-// Never reschedules over a pending work item — setColors: fires on every
-// layout/animation tick, and cancelling here would starve the recheck forever.
 private func scheduleGradientRecheck() {
     guard gradientRecheckWorkItem == nil else { return }
     let item = DispatchWorkItem { runGradientRecheck() }
@@ -238,47 +101,60 @@ private func scheduleGradientRecheck() {
 
 private func runGradientRecheck() {
     gradientRecheckWorkItem = nil
-    guard let hook = gradientRecheckHook else { return }
+    guard UserDefaults.blackNowPlayingUI else { return }
 
-    let forceBlack = shouldForceBlackGradient()
-    if forceBlack != gradientRecheckAppliedBlack {
-        // Verdict flipped — the live track has settled. Apply it and stop
-        // watching; the next setColors: starts a fresh loop.
-        gradientRecheckAppliedBlack = forceBlack
-        let colors = forceBlack
-            ? [UIColor.black.cgColor, UIColor.black.cgColor]
-            : gradientRecheckOriginalColors
-        hook.orig.setColors(colors)
-        writeDebugLog("[BlackUI] recheck flipped gradient -> forceBlack=\(forceBlack)")
-    } else if gradientRecheckAttempt < gradientRecheckMaxAttempts {
-        // Live track may still be settling (or still missing) — try again.
+    // The header view model's color() is the live per-track album color —
+    // same source as the didChangeColor argument, refreshed at render time.
+    if let color = backgroundViewModel?.color() {
+        evaluateVerdict(from: color, source: "recheck:backgroundViewModel")
+        return
+    }
+
+    if gradientRecheckAttempt < gradientRecheckMaxAttempts {
         gradientRecheckAttempt += 1
         scheduleGradientRecheck()
     }
 }
 
-// Intercepts every gradient color application in the app, but only overrides
-// layers owned by the now-playing gradient views (NowPlaying_ScrollImpl /
-// NowPlaying_MixingTransitionImpl.NPVGradientView). Spotify's own colors are
-// left untouched for lighter covers, so the gradient reverts to normal on
-// track change.
+private func isNowPlayingGradientLayer(_ layer: CAGradientLayer) -> Bool {
+    guard let view = layer.delegate as? UIView else { return false }
+    return NSStringFromClass(type(of: view)).contains("NPVGradientView")
+}
+
+// Intercepts every gradient color application in the app, but only tracks and
+// overrides layers owned by the now-playing gradient views (ScrollImpl /
+// MixingTransitionImpl.NPVGradientView). The verdict is driven by the header's
+// per-track color callback, so a track switch to a black cover applies black
+// and a switch to a light cover restores Spotify's own colors.
 class NowPlayingGradientLayerHook: ClassHook<CAGradientLayer> {
     typealias Group = BlackNowPlayingUIGroup
     static let targetName = "CAGradientLayer"
 
     func setColors(_ colors: [CGColor]?) {
         if isNowPlayingGradientLayer(target) {
-            gradientRecheckHook = self
-            gradientRecheckOriginalColors = colors
-            gradientRecheckAppliedBlack = shouldForceBlackGradient()
+            registerGradientLayer(target, originalColors: colors)
             gradientRecheckAttempt = 0
             scheduleGradientRecheck()
-            if gradientRecheckAppliedBlack {
+            if forceBlackVerdict {
                 orig.setColors([UIColor.black.cgColor, UIColor.black.cgColor])
                 return
             }
         }
         orig.setColors(colors)
+    }
+}
+
+// The header's per-track color callback — fires once per track switch with the
+// new album color (card-render time, never lagged like currentTrack()). This is
+// the track-switch detection the header functionality uses; the gradient verdict
+// piggybacks on it.
+class NPVBackgroundViewControllerHook: ClassHook<NSObject> {
+    typealias Group = BlackNowPlayingUIGroup
+    static let targetName = "NowPlaying_ScrollImpl.NPVBackgroundViewController"
+
+    func backgroundViewModel(_ viewModel: NSObject, didChangeColor color: UIColor, playerState: NSObject?) {
+        orig.backgroundViewModel(viewModel, didChangeColor: color, playerState: playerState)
+        evaluateVerdict(from: color, source: "didChangeColor")
     }
 }
 
