@@ -4,9 +4,10 @@ All-black Now Playing UI: renders an all-black gradient background for album
 covers that are mostly black (the "donda / 25% black album" use case), instead
 of the stock artwork-backed gradient.
 
-## What's embedded in main
+## Implementation (this branch)
 
-The feature is already merged into the main branch (tested build). Related code:
+The feature implementation is squashed into `6602338` (along with the canvas
+work and the lyric refactor), then refined on top of this branch:
 
 - `Sources/EeveeSpotify/BlackNowPlayingUI.x.swift`
   - `activateBlackNowPlayingUI()` (~line 109), toggle-read at activation.
@@ -24,20 +25,42 @@ The feature is already merged into the main branch (tested build). Related code:
 - `layout/Library/Application Support/EeveeSpotify.bundle/en.lproj/Localizable.strings` —
   `black_now_playing_ui` + description strings.
 
-## Research notes / deltas not in main
+### Refinements applied on this branch (cherry-picked from Master-impl)
 
-Because this branch diverges from the latest changes, the following refinements
-live as notes instead of commits (fold in only after re-checking against main):
+- `2dd6bc8` — `9ea68f5` "Lower black-cover threshold to 50%→25% and fix URI
+  cache stale-hit on Donda": threshold 0.5 → 0.25, plus fall back to the live
+  player-track URI when the viewWillAppear capture didn't fire, so the cache
+  key stays unique (the stale-hit was making every album render black).
+- `f21fcdc` — the NSURL URI cast from `c8321ab`/`stash@{0}`: cast `URI()`
+  through `NSURL` before reading `absoluteString`, guarding against a
+  type-mismatch crash on rewritten local-track URIs. This fix was missing from
+  Master-impl's tip (`9ea68f5` still used the unguarded form).
 
-- `Master-impl` commit `9ea68f5` "Lower black-cover threshold to 50%→25% and fix
-  URI cache stale-hit on Donda" — 8 insertions, 2 deletions in
-  `BlackNowPlayingUI.x.swift` only.
-- `Master-impl` commit `c8321ab` (+ `stash@{0}`) — BlackNowPlayingUI URI cast:
-  cast `URI()` result through `NSURL` before reading `absoluteString`. (The
-  stash also touched `.gitignore`; our `.gitignore` changes are never
-  committed.)
+## Research findings (Aug 5 2026 subagent)
+
+- The feature is NOT on the local `Master` branch (no `BlackNowPlayingUI.x.swift`,
+  no settings key, no strings, no Tweak.x activation). It lives only on this
+  branch and `Master-impl`.
+- `origin/Master` (7662f88) looked like it had the feature, but that was a
+  **stale local ref** — `origin` and `myfork` point at the same GitHub repo,
+  whose live Master is the current Master branch without BNP.
+- Three versions exist: BlackNowPlaying branch (0.5 threshold, no cast),
+  Master-impl tip `9ea68f5` (0.25 + live-URI fallback, no cast), and the final
+  `c8321ab` stash blob (0.25 + live-URI fallback + NSURL cast). This branch
+  now carries the final form.
+- **String drift**: both branches' `Localizable.strings` say "at least 50%
+  black" but the final threshold is 25%. If porting to Master, fix the string
+  to say 25% (or "mostly black").
+- Porting to Master requires an additive edit to
+  `V91TrackMetadataCapture.x.swift` (add `capturedTrackURI` + a
+  diagnostics-stripped `captureCanvasTrack(_:)`) — do NOT copy Master-impl's
+  V91 file wholesale, it deletes the metadata cache Master's lyrics pipeline
+  still uses. Other deps present on Master: `statefulPlayer`, `writeDebugLog`,
+  `NPVScrollViewController` (V1), `SPTPlayerTrack.URI()`.
 
 ## Status
 
-Feature active and shipping in main. The two `Master-impl` refinements
-(25% threshold + URI cast) are pending manual verification against main.
+Feature works on this branch (25% threshold + URI cast). Verified build clean.
+Known limitation from device testing: the "is this album black" detection
+previously rendered every album black — that was the stale-hit fixed by
+`2dd6bc8`; needs a fresh device test to confirm.
