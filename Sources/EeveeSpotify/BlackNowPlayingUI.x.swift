@@ -76,7 +76,7 @@ private func shouldForceBlackGradient() -> Bool {
     // did not fire for this playback path (e.g. Donda-style covers on builds
     // where NPVScrollViewController is absent).
     let uri = capturedTrackURI
-        ?? statefulPlayer?.currentTrack()?.URI()?.absoluteString
+        ?? statefulPlayer?.currentTrack().flatMap { ($0.URI() as? NSURL)?.absoluteString }
         ?? ""
     if blackCoverURI == uri {
         return blackCoverIsMostlyBlack
