@@ -38,6 +38,7 @@ var uiRenderedTrackKey: String? {
 private func recordRenderedTrackKey(_ key: String) {
     guard uiRenderedTrackKey != key else { return }
     uiRenderedTrackKey = key
+    removeStaleFallbackReasonLabels(tag: "now-playing header")
     logRenderedTrackKeyOnce(key, detail: "now-playing card render")
 }
 // ── END OF AI GENERATED CODE ──
