@@ -4,8 +4,9 @@ Build plan for the in-app metadata editor for local files, scoped to the four
 editable fields: **song name (title), artist, album, album cover art**.
 
 Hard constraints:
-- **No Theos.** Every compile happens with the Xcode toolchain (swiftc/clang
-  via `xcrun`) and SwiftPM, orchestrated by GitHub Actions on `macos-latest`.
+- **No Theos on the dev machine.** All builds run in GitHub Actions; Theos
+  (where still used for the tweak) exists only on CI runners, never on the
+  MacBook.
 - **Audio bytes are never rewritten.** Metadata lives in a separate region of
   the file (ID3v2 tag / `moov.udta.meta.ilst`), so editing it leaves duration
   bit-identical — the `spotify:local:artist:album:title:duration` URI stays
@@ -82,62 +83,42 @@ New file: `Sources/EeveeSpotify/MetadataEditor/MetadataEditorHooks.x.swift`
 (Orion). UI entry: a "Edit metadata" row action + a form in
 `EeveeSettingsView` (plain SwiftUI/UIKit, no Theos involvement).
 
-## 4. Build migration: Theos → GitHub Actions + Xcode toolchain
+## 4. Build & CI
 
-Where Theos is used today and the Theos-free replacement:
+Theos is never installed or run on the dev MacBook. All builds happen in
+GitHub Actions:
 
-| Component | Today | Replacement |
-|---|---|---|
-| `EeveeSpotify.dylib` | Theos `make package` (`tweak.mk`, Theos swiftc, `-lroot`) | SwiftPM: `theos/orion` as SPM dependency (verified it ships a `Package.swift`) + `swiftc` via `xcrun` against the iOS SDK; ldid via brew |
-| `EeveeSwiftProtobuf.framework` | `Tools/SwiftProtobufBuild/build-eeveeswiftprotobuf.sh` (already Theos-free) | unchanged |
-| `zxPluginsInject.dylib` | Theos + Logos (`SideloadFix.xm` `%hook`) | rewrite the 4 hook groups as plain ObjC runtime swizzles (`class_replaceMethod` / `method_exchangeImplementations`) + vendored `fishhook` (plain C); compile with `clang -arch arm64 -isysroot $(xcrun -sdk iphoneos --show-sdk-path)` |
-| code signing | Theos ldid integration | `brew install ldid`, sign the dylib manually |
-| packaging | Theos `.deb` (used only as extraction vehicle for the IPA path) | stage dylib + framework + bundle directly, skip the deb for IPA builds |
+- **Test job (`test-tagkit`, `macos-latest`)** — new, runs `swift test` on
+  `MetadataTagKit` (pure host Swift, no device, no toolchain tricks). Runs on
+  every push to this branch.
+- **Tweak build** — the existing `.github/workflows/buildpatched.yml` /
+  `buildnopatch.yml` pipeline stays as-is: Theos is installed on the GitHub
+  runner (it never touches the MacBook), `make package` produces the deb,
+  `cyan`/`ipapatch` produce the IPA. The metadata editor hooks and UI are
+  regular Orion `.x.swift` sources, so they slot into the existing
+  `EeveeSpotify_FILES` glob with zero workflow changes.
+- **IPA smoke test** — `workflow_dispatch` with `ipa_url`, reusing the current
+  `package-ipa` steps; device testing happens against these CI-built artifacts.
 
-`Package.swift` rewrite: delete `TheosConfiguration` / `.theos/spm_config`;
-derive the triple, SDK path (`xcrun -sdk iphoneos --show-sdk-path`) and
-`-resource-dir` from the Xcode toolchain; add `theos/orion` as a package
-dependency; keep the `EeveeSpotifyC` target unchanged. The repo's
-`Makefile` is kept for reference only and is not required by CI.
+Substrate/ElleKit: not a concern. The shipped IPA bundles `Orion.framework`
++ `CydiaSubstrate.framework` in-app (Orion links substrate weak), and Theos on
+the runner produces the same artifacts today — nothing about the metadata
+editor changes this.
 
-## 5. GitHub Actions workflow
+## 5. Risks & mitigations
 
-`.github/workflows/metadata-editor.yml`:
-
-- **Job `test-tagkit`** (`macos-latest`): `swift test` — host-only, no device,
-  no Theos. Runs on every push to the branch.
-- **Job `build-tweak`** (`macos-latest`, `setup-xcode` 26.1.1): resolve Orion
-  via SPM → `swift build` for `arm64-apple-ios14.0` → build
-  `zxPluginsInject` (rewritten, clang) → ldid → stage
-  `EeveeSpotify.dylib` + `EeveeSwiftProtobuf.framework` + bundle.
-- **Job `package-ipa`** (`workflow_dispatch` with `ipa_url`): reuses the
-  already-Theos-free steps from `buildpatched.yml` — `cyan` injection,
-  `ipapatch` LC-inject, OpeninSafariSpotify appex, alt-icons, binary-patch
-  verify. Artifacts: test logs, `Outputs/IPAS/EeveeSpotify-<ver>-<spot>.ipa`.
-
-When the migration lands, `buildpatched.yml` drops the "Setup Theos" step and
-the `THEOS_PACKAGE_SCHEME=rootless make package` step in favor of a shared
-action that stages the SwiftPM-built dylib.
-
-## 6. Risks & mitigations
-
-1. **Orion substrate resolution on sideload** (no ElleKit on a cyan-signed
-   IPA): confirm how today's IPA resolves `MSHookFunction*`; fallback is a
-   vendored `MSHookFunction`/`MSHookMessageEx` shim implemented over the
-   already-vendored `fishhook`. Open item, verified during M3.
-2. **M4A moov growth → mdat move → `stco`/`co64` rewrite**: covered by
+1. **M4A moov growth → mdat move → `stco`/`co64` rewrite**: covered by
    dedicated unit tests; padding keeps the move rare in practice.
-3. **ID3v2.4 syncsafe frame sizes + unsynchronisation flag**: parser must
+2. **ID3v2.4 syncsafe frame sizes + unsynchronisation flag**: parser must
    handle both; writer emits clean v2.3 unless input was v2.4.
-4. **Non-MP3/M4A local files (FLAC/WAV/OGG)**: out of scope for v1;
+3. **Non-MP3/M4A local files (FLAC/WAV/OGG)**: out of scope for v1;
    `FormatDetector` fails fast with a clear error.
-5. **Spotify cache staleness** for title/artist/album: solved by display
+4. **Spotify cache staleness** for title/artist/album: solved by display
    interception (option (a)), never by forcing a re-scan (URI churn).
 
-## 7. Milestones
+## 6. Milestones
 
-- **M1** — `MetadataTagKit` + tests green on macOS (no device, no CI).
+- **M1** — `MetadataTagKit` + tests green on macOS via `swift test`.
 - **M2** — macOS CLI harness `Tools/metadata-edit` for manual file testing.
-- **M3** — Theos-free CI build (sections 4–5) — prerequisite for device work,
-  since no local Theos build exists.
-- **M4** — tweak hooks + editor UI; device smoke-tested via the CI-built IPA.
+- **M3** — tweak hooks (FTPAllSongsDataSource + OfflineManagerImpl + display
+  interception) and editor UI; smoke-tested on-device with CI-built IPAs.
