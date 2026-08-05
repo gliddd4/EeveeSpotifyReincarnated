@@ -5,15 +5,22 @@ import MediaPlayer
 
 struct BlackNowPlayingUIGroup: HookGroup {}
 
-// Black-cover analysis cache, keyed by the sampled artwork itself (not the
-// track URI) so a repeated setColors: (layout pass, animation tick) reuses the
-// last result instead of re-scanning the cover every time. Keying by URI went
-// stale: capturedTrackURI only fires on viewWillAppear, so in-session track
-// changes kept the old key and returned the first album's verdict until the
-// app was relaunched.
+// Black-cover analysis cache, keyed by the live track's URI. The lyrics and
+// header pipelines never read MPNowPlayingInfoCenter for the current track —
+// it stays pinned to the first track until the app relaunches. Instead they
+// read the live player track (statefulPlayer.currentTrack()), whose
+// metadata()["extracted_color"] is refreshed per track. Keying the cache by
+// that live URI means a track switch always misses the cache and re-evaluates
+// the new cover, so the verdict can never stick to the first album.
 private let blackCoverQueue = DispatchQueue(label: "com.eeveespotify.blackcover")
+private var _blackCoverURI: String?
 private var _blackCoverPixels: [UInt8]?
 private var _blackCoverIsMostlyBlack = false
+
+private var blackCoverURI: String? {
+    get { blackCoverQueue.sync { _blackCoverURI } }
+    set { blackCoverQueue.sync { _blackCoverURI = newValue } }
+}
 
 private var blackCoverIsMostlyBlack: Bool {
     get { blackCoverQueue.sync { _blackCoverIsMostlyBlack } }
@@ -27,6 +34,59 @@ private var blackCoverPixels: [UInt8]? {
 
 private let blackLuminanceThreshold = 0.2
 private let blackPixelRatioThreshold = 0.25
+
+// Relative luminance of a hex color string (#RRGGBB / #RGB). Returns nil for
+// unparseable input.
+private func hexLuminance(_ hex: String) -> Double? {
+    let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+    var int: UInt64 = 0
+    Scanner(string: cleaned).scanHexInt64(&int)
+    let r, g, b: UInt64
+    switch cleaned.count {
+    case 3:
+        (r, g, b) = ((int >> 8) * 17, ((int >> 4) & 0xF) * 17, (int & 0xF) * 17)
+    case 6, 8:
+        (r, g, b) = (int >> 16, (int >> 8) & 0xFF, int & 0xFF)
+    default:
+        return nil
+    }
+    return 0.2126 * Double(r) / 255 + 0.7152 * Double(g) / 255 + 0.0722 * Double(b) / 255
+}
+
+// The live track's server-side extracted album color, mirroring how the lyrics
+// pipeline resolves it (resolvedTrackExtractedColor). This is the canonical
+// color source the header/lyrics use and it is refreshed per track, so it can
+// never go stale the way MPNowPlayingInfoCenter artwork does.
+private func liveTrackExtractedColorHex() -> String? {
+    guard let track = statefulPlayer?.currentTrack() else { return nil }
+    let nsTrack = track as AnyObject
+    let metaSelector = Selector(("metadata"))
+    guard nsTrack.responds(to: metaSelector) else { return nil }
+    let meta = track.metadata()
+    if let hex = meta["extracted_color"], !hex.isEmpty {
+        return hex
+    }
+    let colorSelector = Selector(("extractedColorHex"))
+    guard nsTrack.responds(to: colorSelector) else { return nil }
+    if let hex = track.extractedColorHex(), !hex.isEmpty {
+        return hex
+    }
+    return nil
+}
+
+// Identity of the currently playing track, from the live player state (never
+// stale). Falls back to the captured URI for logging/cache keying when the
+// player is unavailable.
+private func liveTrackURIString() -> String {
+    if let uri = statefulPlayer?.currentTrack().flatMap({ ($0.URI() as? NSURL)?.absoluteString }),
+       !uri.isEmpty {
+        return uri
+    }
+    if let captured = capturedTrackURI, !captured.isEmpty {
+        return captured
+    }
+    return ""
+}
 
 // Sample the album cover into a small fixed-size RGBA buffer so the black
 // analysis reads raw pixels instead of relying on CoreImage, which failed
@@ -105,16 +165,29 @@ private func coverMeanLuminance(_ pixels: [UInt8]) -> Double {
 private func shouldForceBlackGradient() -> Bool {
     guard UserDefaults.blackNowPlayingUI else { return false }
 
+    // Primary path: the live track's extracted album color — the same source
+    // the header/lyrics use. It is refreshed per track, so a track switch
+    // immediately yields the new cover's verdict with no staleness window.
+    if let hex = liveTrackExtractedColorHex(), let luminance = hexLuminance(hex) {
+        let isMostlyBlack = luminance < blackLuminanceThreshold
+        writeDebugLog("[BlackUI] extractedColor=\(hex) lum=\(String(format: "%.2f", luminance)) uri=\(liveTrackURIString()) -> forceBlack=\(isMostlyBlack)")
+        return isMostlyBlack
+    }
+
+    // Fallback: pixel-sample the now-playing artwork (no extracted color, e.g.
+    // local files). The cache is keyed by the live track URI, so a track
+    // switch invalidates the previous verdict and re-samples the new cover.
     guard let pixels = sampleCoverRGBA() else {
         writeDebugLog("[BlackUI] no artwork -> forceBlack=false")
         return false
     }
 
-    // Same artwork as the last verdict (animation ticks, repeated layout
-    // passes) — reuse the result instead of re-scanning. On track change the
-    // artwork differs, so this cache miss recomputes for the new cover; the
-    // previous URI-keyed cache could not do that because capturedTrackURI is
-    // pinned to the first track's viewWillAppear and never updates.
+    let uri = liveTrackURIString()
+    if blackCoverURI != uri {
+        blackCoverURI = uri
+        blackCoverPixels = nil
+    }
+
     if blackCoverPixels == pixels {
         return blackCoverIsMostlyBlack
     }
@@ -129,9 +202,6 @@ private func shouldForceBlackGradient() -> Bool {
         || ratio >= blackPixelRatioThreshold
     blackCoverPixels = pixels
     blackCoverIsMostlyBlack = isMostlyBlack
-    let uri = capturedTrackURI
-        ?? statefulPlayer?.currentTrack().flatMap { ($0.URI() as? NSURL)?.absoluteString }
-        ?? ""
     writeDebugLog("[BlackUI] cover meanLum=\(String(format: "%.2f", meanLuminance)) blackRatio=\(String(format: "%.2f", ratio)) uri=\(uri) -> forceBlack=\(isMostlyBlack)")
     return isMostlyBlack
 }
@@ -142,14 +212,12 @@ private func isNowPlayingGradientLayer(_ layer: CAGradientLayer) -> Bool {
 }
 
 // --- Delayed re-check state ---
-// MPNowPlayingInfoCenter artwork settles shortly after the gradient's
-// setColors: fires on track change, so the first verdict can be computed
-// from the previous track's cover and the gradient stays stale until the
-// app relaunches (relaunch resets the cache globals). When setColors fires
-// we schedule a short re-check loop: each tick re-samples the artwork and,
-// once it has settled on the new cover, flips the gradient to match. The
-// loop is bounded so a track with no artwork (or a switch to nothing) can't
-// keep it running forever; any later setColors: reschedules a fresh loop.
+// Safety net for the case where the gradient's setColors: fires before the
+// live track object is committed: each tick re-evaluates shouldForceBlackGradient()
+// (which reads the live track, so it is fresh per call) and flips the gradient
+// when the verdict changes. The loop is bounded so a track with no artwork can't
+// keep it running forever; any later setColors: with a new track starts a fresh
+// loop.
 private let gradientRecheckInterval: TimeInterval = 1.5
 private let gradientRecheckMaxAttempts = 6
 
@@ -159,8 +227,10 @@ private var gradientRecheckAppliedBlack = false
 private var gradientRecheckAttempt = 0
 private var gradientRecheckWorkItem: DispatchWorkItem?
 
+// Never reschedules over a pending work item — setColors: fires on every
+// layout/animation tick, and cancelling here would starve the recheck forever.
 private func scheduleGradientRecheck() {
-    gradientRecheckWorkItem?.cancel()
+    guard gradientRecheckWorkItem == nil else { return }
     let item = DispatchWorkItem { runGradientRecheck() }
     gradientRecheckWorkItem = item
     DispatchQueue.main.asyncAfter(deadline: .now() + gradientRecheckInterval, execute: item)
@@ -172,8 +242,8 @@ private func runGradientRecheck() {
 
     let forceBlack = shouldForceBlackGradient()
     if forceBlack != gradientRecheckAppliedBlack {
-        // Verdict flipped — the artwork has settled on a new cover. Apply it
-        // and stop watching; the next setColors: starts a fresh loop.
+        // Verdict flipped — the live track has settled. Apply it and stop
+        // watching; the next setColors: starts a fresh loop.
         gradientRecheckAppliedBlack = forceBlack
         let colors = forceBlack
             ? [UIColor.black.cgColor, UIColor.black.cgColor]
@@ -181,7 +251,7 @@ private func runGradientRecheck() {
         hook.orig.setColors(colors)
         writeDebugLog("[BlackUI] recheck flipped gradient -> forceBlack=\(forceBlack)")
     } else if gradientRecheckAttempt < gradientRecheckMaxAttempts {
-        // Artwork may still be settling (or still missing) — try again.
+        // Live track may still be settling (or still missing) — try again.
         gradientRecheckAttempt += 1
         scheduleGradientRecheck()
     }
