@@ -53,7 +53,10 @@ private var lastLogDetail = ""
 private func registerGradientLayer(_ layer: CAGradientLayer, originalColors: [CGColor]?) {
     gradientLayerLock.lock(); defer { gradientLayerLock.unlock() }
     gradientLayers.add(layer)
-    if let colors = originalColors {
+    // Never record a forced-paint: setting layer.colors to black re-enters the
+    // setColors: hook with the black colors, and overwriting the stored
+    // originals with black would make the revert path restore black forever.
+    if !forceBlackVerdict, let colors = originalColors {
         originalColorsByLayer[ObjectIdentifier(layer)] = colors
         lastSeenOriginalColors = colors
     }
@@ -292,6 +295,12 @@ private func refreshGradientVerdict() {
     forceBlackVerdict = force
     guard forceBlackVerdict != lastAppliedVerdict else { return }
 
+    // Commit the verdict BEFORE applying: setting layer.colors re-enters the
+    // setColors: hook synchronously, and refreshGradientVerdict() runs again
+    // inside that hook. With the new verdict already committed, the re-entrant
+    // call short-circuits on the guard above instead of recursing forever.
+    lastAppliedVerdict = forceBlackVerdict
+
     gradientLayerLock.lock()
     let layers = gradientLayers.allObjects
     let originals = originalColorsByLayer
@@ -307,7 +316,6 @@ private func refreshGradientVerdict() {
         }
     }
     if Thread.isMainThread { apply() } else { DispatchQueue.main.async(execute: apply) }
-    lastAppliedVerdict = forceBlackVerdict
 }
 
 private func isNowPlayingGradientLayer(_ layer: CAGradientLayer) -> Bool {
