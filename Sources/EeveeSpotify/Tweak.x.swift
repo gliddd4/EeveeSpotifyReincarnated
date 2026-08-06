@@ -526,6 +526,15 @@ struct EeveeSpotify: Tweak {
             activateCanvasArtworkPublisher()
             activateBlackNowPlayingUI()
             activateSponsorBlock()
+
+            // Metadata editor for local files (title/artist/album). The group
+            // pre-flights every target class + selector before activating, so
+            // this guard is just the first cheap check.
+            if NSClassFromString("_TtC35ListUXPlatform_FreeTierPlaylistImpl21FTPAllSongsDataSource") != nil {
+                activateMetadataEditor()
+            } else {
+                writeDebugLog("[INIT] Skipped MetadataEditor (FTPAllSongsDataSource missing)")
+            }
             return
         }
 

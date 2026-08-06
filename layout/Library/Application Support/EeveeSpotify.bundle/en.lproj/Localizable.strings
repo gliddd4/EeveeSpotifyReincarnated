@@ -6,6 +6,7 @@ customization = "Customization";
 experiments = "Experiments";
 sponsorblock = "SponsorBlock (BETA)";
 appIcon = "App Icon";
+metadataEditor = "Metadata Editor";
 
 common_issues_tip_title = "Having Trouble?";
 

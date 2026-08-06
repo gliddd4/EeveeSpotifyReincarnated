@@ -129,6 +129,19 @@ struct EeveeSettingsView: View {
                 )
             }
 
+            Button {
+                pushSettingsController(
+                    with: MetadataEditorSettingsView(),
+                    title: "metadataEditor".localized
+                )
+            } label: {
+                NavigationSectionView(
+                    color: Color(hex: "#30D5C8"),
+                    title: "metadataEditor".localized,
+                    imageSystemName: "tag.fill"
+                )
+            }
+
             //
 
             Section(header: Text("debug_title".localized), footer: Text("debug_section_footer".localized)) {
