@@ -9,6 +9,7 @@ struct LiquidGlassNowPlayingBarGroup: HookGroup { }
 private var liquidGlassAppliedKey = 0
 private var liquidGlassBackdropKey = 0
 private var liquidGlassStateKey = 0
+private var liquidGlassPassKey = 0
 private weak var appliedPill: UIView?
 
 func activateLiquidGlassNowPlayingBar() {
@@ -63,7 +64,7 @@ private func findNowPlayingBarPill(in root: UIView) -> UIView? {
         // An opaque background (album-art fill) separates the pill from the
         // transparent outline/glow view that surrounds it.
         let hasFill = (view.backgroundColor?.cgColor.alpha ?? 0) > 0
-        let score = (view.layer.cornerRadius > 0 ? 1 : 0) + (hasFill ? 1 : 0)
+        let score = (hasFill ? 2 : 0) + (view.layer.cornerRadius > 0 ? 1 : 0)
 
         candidates.append((NSStringFromClass(type(of: view)), "\(frame)", "\(windowFrame)", score))
         if score > bestScore || (score == bestScore && depth > bestDepth) {
@@ -148,14 +149,17 @@ private func applyLiquidGlass(toPill pill: UIView) {
         writeDebugLog("[LiquidGlassNPB] Glass applied frame=\(pill.frame) inWindow=\(pill.window != nil)")
     }
 
-    // Timeline of the pill's appearance for debugging: logged only when it
-    // changes, so the next export shows when Spotify paints the tint.
-    let state = "subviews=\(pill.subviews.count) bg=\(String(describing: pill.backgroundColor))"
+    // Timeline of the pill's appearance for debugging: the first passes are
+    // always logged so the next export shows whether layout passes keep
+    // firing; afterwards only changes are logged.
+    let pass = (objc_getAssociatedObject(pill, &liquidGlassPassKey) as? Int ?? 0) + 1
+    objc_setAssociatedObject(pill, &liquidGlassPassKey, pass, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    let content = "subviews=\(pill.subviews.count) bg=\(String(describing: pill.backgroundColor))"
     let last = objc_getAssociatedObject(pill, &liquidGlassStateKey) as? String
-    if last != state {
-        writeDebugLog("[LiquidGlassNPB] Pill state: \(state)")
+    if pass <= 10 || content != last {
+        writeDebugLog("[LiquidGlassNPB] Pill state (pass \(pass)): \(content)")
     }
-    objc_setAssociatedObject(pill, &liquidGlassStateKey, state, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    objc_setAssociatedObject(pill, &liquidGlassStateKey, content, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
 }
 
 class NowPlayingBarViewControllerHook: ClassHook<UIViewController> {
