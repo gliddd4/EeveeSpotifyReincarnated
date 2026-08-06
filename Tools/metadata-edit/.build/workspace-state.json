@@ -1,0 +1,27 @@
+{
+  "object" : {
+    "artifacts" : [
+
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "metadatatagkit",
+          "kind" : "fileSystem",
+          "location" : "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit",
+          "name" : "MetadataTagKit"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit"
+        },
+        "subpath" : "metadatatagkit"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}

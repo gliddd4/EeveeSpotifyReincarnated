@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/metadata_edit.build/master.swiftdeps"
+  },
+  "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/Sources/metadata-edit/main.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/metadata_edit.build/main.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/metadata_edit.build/main.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/metadata_edit.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/metadata_edit.build/main.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/metadata_edit.build/main.dia"
+  }
+}

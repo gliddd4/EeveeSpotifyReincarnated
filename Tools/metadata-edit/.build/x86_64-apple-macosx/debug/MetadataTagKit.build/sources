@@ -1,0 +1,11 @@
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/FormatDetector.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/ID3/ID3v2TagParser.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/ID3/ID3v2TagWriter.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/ID3/ID3v2TextEncoding.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MP4/M4AChunkOffsetRebuilder.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MP4/M4AIlstEditor.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MP4/MP4BoxReader.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MP4/MP4BoxWriter.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MetadataTagKitError.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/Models/TrackMetadata.swift
+/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/TagEditor.swift

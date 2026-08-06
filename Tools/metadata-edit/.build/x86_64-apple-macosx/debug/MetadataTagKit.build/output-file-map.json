@@ -1,0 +1,82 @@
+{
+  "": {
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/master.swiftdeps"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/FormatDetector.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/FormatDetector.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/FormatDetector.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/FormatDetector~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/FormatDetector.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/FormatDetector.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/ID3/ID3v2TagParser.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagParser.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagParser.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagParser~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagParser.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagParser.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/ID3/ID3v2TagWriter.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagWriter.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagWriter.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagWriter~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagWriter.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TagWriter.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/ID3/ID3v2TextEncoding.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TextEncoding.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TextEncoding.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TextEncoding~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TextEncoding.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/ID3v2TextEncoding.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MP4/M4AChunkOffsetRebuilder.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AChunkOffsetRebuilder.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AChunkOffsetRebuilder.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AChunkOffsetRebuilder~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AChunkOffsetRebuilder.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AChunkOffsetRebuilder.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MP4/M4AIlstEditor.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AIlstEditor.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AIlstEditor.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AIlstEditor~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AIlstEditor.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/M4AIlstEditor.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MP4/MP4BoxReader.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxReader.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxReader.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxReader~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxReader.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxReader.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MP4/MP4BoxWriter.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxWriter.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxWriter.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxWriter~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxWriter.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MP4BoxWriter.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/MetadataTagKitError.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MetadataTagKitError.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MetadataTagKitError.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MetadataTagKitError~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MetadataTagKitError.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/MetadataTagKitError.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/Models/TrackMetadata.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TrackMetadata.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TrackMetadata.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TrackMetadata~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TrackMetadata.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TrackMetadata.dia"
+  },
+  "/Users/jb/tmp/eevee-metadata/Sources/EeveeSpotify/Dependencies/MetadataTagKit/Sources/MetadataTagKit/TagEditor.swift": {
+    "dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TagEditor.d",
+    "object": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TagEditor.swift.o",
+    "swiftmodule": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TagEditor~partial.swiftmodule",
+    "swift-dependencies": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TagEditor.swiftdeps",
+    "diagnostics": "/Users/jb/tmp/eevee-metadata/Tools/metadata-edit/.build/x86_64-apple-macosx/debug/MetadataTagKit.build/TagEditor.dia"
+  }
+}
