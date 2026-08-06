@@ -130,8 +130,9 @@ private func applyLiquidGlass(toPill pill: UIView) {
         // Match the pill's own nearly-rectangular radius; a full capsule would
         // crop the album art.
         let radius = max(pill.layer.cornerRadius, 1)
-        pill.cornerConfiguration = .continuous(radius)
-        glass.cornerConfiguration = .continuous(radius)
+        let corner = UICornerRadius.fixed(radius)
+        pill.cornerConfiguration = .corners(radius: corner)
+        glass.cornerConfiguration = .corners(radius: corner)
 
         pill.insertSubview(glass, at: 1)
         glass.frame = pillBounds
