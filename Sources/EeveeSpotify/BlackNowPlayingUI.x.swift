@@ -53,11 +53,21 @@ private var lastLogDetail = ""
 private func registerGradientLayer(_ layer: CAGradientLayer, originalColors: [CGColor]?) {
     gradientLayerLock.lock(); defer { gradientLayerLock.unlock() }
     gradientLayers.add(layer)
-    // Never record a forced-paint: setting layer.colors to black re-enters the
-    // setColors: hook with the black colors, and overwriting the stored
-    // originals with black would make the revert path restore black forever.
-    if !forceBlackVerdict, let colors = originalColors {
-        originalColorsByLayer[ObjectIdentifier(layer)] = colors
+    guard let colors = originalColors, !colors.isEmpty else { return }
+    let identifier = ObjectIdentifier(layer)
+    if forceBlackVerdict {
+        // During a forced-black window, record Spotify's real paints (needed
+        // to revert when the verdict flips) but never our own re-entrant
+        // forced-black paint — recording that would make the revert restore
+        // black forever. Layers born mid-window must record their real paint,
+        // or the revert has nothing to restore and the UI stays black.
+        let isForcedBlackPaint = colors.allSatisfy { (luminance(ofColors: [$0]) ?? 0) < 0.01 }
+        if !isForcedBlackPaint {
+            originalColorsByLayer[identifier] = colors
+            lastSeenOriginalColors = colors
+        }
+    } else {
+        originalColorsByLayer[identifier] = colors
         lastSeenOriginalColors = colors
     }
 }
@@ -306,9 +316,10 @@ private func refreshGradientVerdict() {
     let originals = originalColorsByLayer
     gradientLayerLock.unlock()
 
+    let shouldForce = forceBlackVerdict
     let apply = {
         for layer in layers {
-            if forceBlackVerdict {
+            if shouldForce {
                 layer.colors = [UIColor.black.cgColor, UIColor.black.cgColor]
             } else if let colors = originals[ObjectIdentifier(layer)] {
                 layer.colors = colors
