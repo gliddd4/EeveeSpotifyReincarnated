@@ -102,52 +102,30 @@ private func applyLiquidGlass(toPill pill: UIView) {
         writeDebugLog("[LiquidGlassNPB] Hidden border view: \(NSStringFromClass(type(of: sub))) frame=\(sub.frame)")
     }
 
-    // Spotify paints the pill's gray tint onto its own background AFTER our
-    // scan (shouldUpdateTopContainerColor), so the glass cannot rely on that
-    // layer being sampled. A backdrop subview sits directly below the glass
-    // and mirrors the pill's background on every layout pass — the glass
-    // always has the tint behind it, whenever Spotify sets it.
-    if let backdrop = objc_getAssociatedObject(pill, &liquidGlassBackdropKey) as? UIView {
-        backdrop.backgroundColor = pill.backgroundColor
-    } else if objc_getAssociatedObject(pill, &liquidGlassAppliedKey) == nil {
-        let backdrop = UIView(frame: pillBounds)
-        backdrop.isUserInteractionEnabled = false
-        backdrop.isAccessibilityElement = false
-        backdrop.layer.cornerRadius = pill.layer.cornerRadius
-        backdrop.layer.masksToBounds = true
-        backdrop.backgroundColor = pill.backgroundColor
-        pill.insertSubview(backdrop, at: 0)
-
-        let glassEffect = UIGlassEffect(style: .regular)
-        glassEffect.isInteractive = true
-        glassEffect.tintColor = UIColor.white.withAlphaComponent(0.12)
-        let glass = UIVisualEffectView(effect: glassEffect)
-        glass.isUserInteractionEnabled = false
-        glass.isAccessibilityElement = false
-        glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.layer.borderWidth = 0.5
-        glass.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
-
-        // Match the pill's own nearly-rectangular radius; a full capsule would
-        // crop the album art.
-        let radius = max(pill.layer.cornerRadius, 1)
-        let corner = UICornerRadius.fixed(radius)
-        pill.cornerConfiguration = .corners(radius: corner)
-        glass.cornerConfiguration = .corners(radius: corner)
-
-        pill.insertSubview(glass, at: 1)
-        glass.frame = pillBounds
-        NSLayoutConstraint.activate([
-            glass.leadingAnchor.constraint(equalTo: pill.leadingAnchor),
-            glass.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
-            glass.topAnchor.constraint(equalTo: pill.topAnchor),
-            glass.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
-        ])
-
-        objc_setAssociatedObject(pill, &liquidGlassAppliedKey, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        appliedPill = pill
-        writeDebugLog("[LiquidGlassNPB] Glass applied frame=\(pill.frame) inWindow=\(pill.window != nil)")
+    // The glass refracts whatever the player screen draws behind the pill, so
+    // the pill's own gray tint must be stripped or it sits between the glass
+    // and the screen. Strip opaque fills from the pill and any full-coverage
+    // plain-UIView subview, every pass — Spotify may re-apply the tint. Content
+    // views (artwork, labels, buttons) are smaller than 85% of the pill and are
+    // left alone.
+    func clearFill(_ view: UIView) {
+        let covers = view.bounds.width >= pillBounds.width * 0.85
+            && view.bounds.height >= pillBounds.height * 0.85
+        let isPlain = NSStringFromClass(type(of: view)) == "UIView"
+        if covers || isPlain {
+            view.backgroundColor = .clear
+            view.layer.backgroundColor = nil
+            if let gradient = view.layer as? CAGradientLayer {
+                gradient.colors = nil
+            }
+        }
+        for child in view.subviews {
+            clearFill(child)
+        }
     }
+    clearFill(pill)
+    pill.backgroundColor = .clear
+    pill.layer.backgroundColor = nil
 
     // Timeline of the pill's appearance for debugging: the first passes are
     // always logged so the next export shows whether layout passes keep
@@ -160,6 +138,38 @@ private func applyLiquidGlass(toPill pill: UIView) {
         writeDebugLog("[LiquidGlassNPB] Pill state (pass \(pass)): \(content)")
     }
     objc_setAssociatedObject(pill, &liquidGlassStateKey, content, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+    guard objc_getAssociatedObject(pill, &liquidGlassAppliedKey) == nil else { return }
+
+    let glassEffect = UIGlassEffect(style: .regular)
+    glassEffect.isInteractive = true
+    glassEffect.tintColor = UIColor.white.withAlphaComponent(0.12)
+    let glass = UIVisualEffectView(effect: glassEffect)
+    glass.isUserInteractionEnabled = false
+    glass.isAccessibilityElement = false
+    glass.translatesAutoresizingMaskIntoConstraints = false
+    glass.layer.borderWidth = 0.5
+    glass.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+
+    // Match the pill's own nearly-rectangular radius; a full capsule would
+    // crop the album art.
+    let radius = max(pill.layer.cornerRadius, 1)
+    let corner = UICornerRadius.fixed(radius)
+    pill.cornerConfiguration = .corners(radius: corner)
+    glass.cornerConfiguration = .corners(radius: corner)
+
+    pill.insertSubview(glass, at: 0)
+    glass.frame = pillBounds
+    NSLayoutConstraint.activate([
+        glass.leadingAnchor.constraint(equalTo: pill.leadingAnchor),
+        glass.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
+        glass.topAnchor.constraint(equalTo: pill.topAnchor),
+        glass.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
+    ])
+
+    objc_setAssociatedObject(pill, &liquidGlassAppliedKey, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    appliedPill = pill
+    writeDebugLog("[LiquidGlassNPB] Glass applied frame=\(pill.frame) inWindow=\(pill.window != nil)")
 }
 
 class NowPlayingBarViewControllerHook: ClassHook<UIViewController> {
