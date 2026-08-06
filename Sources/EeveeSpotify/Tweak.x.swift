@@ -302,7 +302,7 @@ struct EeveeSpotify: Tweak {
             NSLog("[EeveeSpotify] AdBlockerGroup activated")
         }
 
-        // activateEeveeFlexGesture()
+        activateEeveeFlexGesture()
 
         // Global kill-switch for debugging “instant crash / no logs”.
         // If setting this makes Spotify launch, the crash is definitely in one of our hook activations.

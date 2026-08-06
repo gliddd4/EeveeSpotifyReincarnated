@@ -62,8 +62,10 @@ private func findNowPlayingBarPill(in root: UIView) -> UIView? {
             && windowFrame.maxY >= screen.height * 0.75 && windowFrame.maxY <= screen.height + 8
         guard isPillShape else { return }
         // An opaque background (album-art fill) separates the pill from the
-        // transparent outline/glow view that surrounds it.
-        let hasFill = (view.backgroundColor?.cgColor.alpha ?? 0) > 0
+        // transparent outline/glow view that surrounds it. The tint can be
+        // applied to either property, so check both.
+        let bg = view.backgroundColor?.cgColor ?? view.layer.backgroundColor
+        let hasFill = (bg?.alpha ?? 0) > 0
         let score = (hasFill ? 2 : 0) + (view.layer.cornerRadius > 0 ? 1 : 0)
 
         candidates.append((NSStringFromClass(type(of: view)), "\(frame)", "\(windowFrame)", score))
@@ -115,6 +117,7 @@ private func applyLiquidGlass(toPill pill: UIView) {
         if covers || isPlain {
             view.backgroundColor = .clear
             view.layer.backgroundColor = nil
+            view.isOpaque = false
             if let gradient = view.layer as? CAGradientLayer {
                 gradient.colors = nil
             }
@@ -126,6 +129,7 @@ private func applyLiquidGlass(toPill pill: UIView) {
     clearFill(pill)
     pill.backgroundColor = .clear
     pill.layer.backgroundColor = nil
+    pill.isOpaque = false
 
     // Timeline of the pill's appearance for debugging: the first passes are
     // always logged so the next export shows whether layout passes keep
@@ -148,6 +152,10 @@ private func applyLiquidGlass(toPill pill: UIView) {
     glass.isUserInteractionEnabled = false
     glass.isAccessibilityElement = false
     glass.translatesAutoresizingMaskIntoConstraints = false
+    // UIVisualEffectView defaults to systemBackgroundColor on iOS 26, which is
+    // opaque black in dark mode and hides the glass entirely.
+    glass.backgroundColor = .clear
+    glass.isOpaque = false
     glass.layer.borderWidth = 0.5
     glass.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
 
@@ -157,6 +165,8 @@ private func applyLiquidGlass(toPill pill: UIView) {
     let corner = UICornerRadius.fixed(radius)
     pill.cornerConfiguration = .corners(radius: corner)
     glass.cornerConfiguration = .corners(radius: corner)
+
+    writeDebugLog("[LiquidGlassNPB] Glass created effect=\(String(describing: glass.effect)) bg=\(String(describing: glass.backgroundColor)) opaque=\(glass.isOpaque)")
 
     pill.insertSubview(glass, at: 0)
     glass.frame = pillBounds
@@ -170,6 +180,17 @@ private func applyLiquidGlass(toPill pill: UIView) {
     objc_setAssociatedObject(pill, &liquidGlassAppliedKey, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     appliedPill = pill
     writeDebugLog("[LiquidGlassNPB] Glass applied frame=\(pill.frame) inWindow=\(pill.window != nil)")
+
+    // Spotify re-applies the album-art tint asynchronously after layout settles
+    // (no further layout passes fire), so re-strip it shortly after insertion.
+    for delay in [0.05, 0.2, 0.5] {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak pill] in
+            guard let pill, pill.window != nil else { return }
+            pill.backgroundColor = .clear
+            pill.layer.backgroundColor = nil
+            clearFill(pill)
+        }
+    }
 }
 
 class NowPlayingBarViewControllerHook: ClassHook<UIViewController> {
