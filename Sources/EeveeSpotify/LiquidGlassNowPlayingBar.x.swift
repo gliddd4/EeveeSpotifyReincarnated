@@ -49,12 +49,13 @@ private func detachGlass() {
 }
 
 // The bar's VC is a full-screen container; the mini player pill is one of its
-// subviews — an inset (~8pt each side) full-height ~56pt capsule pinned near
-// the bottom. The shadow view (expanded 4pt beyond every edge), the full-width
-// host containers it sits inside, and the full-width top container Spotify
-// expands into the full-screen player are all structurally excluded by hard
-// gates so the album-art tint (applied asynchronously after launch) can never
-// cause a re-pick.
+// subviews — a ~56pt capsule pinned near the bottom, inset ~8pt per side from
+// the full-width host container it sits inside. No device metrics are used to
+// identify it: the pill is the deepest ~56pt capsule that fits entirely inside
+// its superview. That structurally excludes the shadow/outline view (expanded
+// 4pt beyond every edge, so it overflows its superview), the full-width host
+// containers (they span the window and hold the pill, so they are not the
+// deepest), and the top container Spotify expands into the full-screen player.
 private func findNowPlayingBarPill(in root: UIView) -> UIView? {
     let screen = UIScreen.main.bounds
     var best: UIView?
@@ -70,12 +71,14 @@ private func findNowPlayingBarPill(in root: UIView) -> UIView? {
         // The pill is nested (frame is in its superview's coordinates), so the
         // bottom-of-screen check must use window coordinates, not view.frame.
         let windowFrame = view.convert(view.bounds, to: nil)
-        // Shape is a hard gate: the pill is the only inset (~8pt per side)
-        // ~56pt capsule pinned to the bottom in window coordinates. The 382pt
-        // outline (+4pt per side) and the full-width 390pt containers fail the
-        // width gate, so they can never win even with a corner radius or fill.
+        // Shape is a hard gate: a ~56pt capsule pinned to the bottom in window
+        // coordinates that fits entirely inside its superview. The shadow view
+        // overflows every edge (negative origin) and fails the inset check; the
+        // full-width containers fail the depth check below.
+        let superBounds = view.superview?.bounds ?? frame
         let isPillShape = frame.height >= 48 && frame.height <= 64
-            && frame.width >= screen.width - 24 && frame.width <= screen.width - 12
+            && frame.minX >= 0 && frame.minY >= 0
+            && frame.maxX <= superBounds.width && frame.maxY <= superBounds.height
             && windowFrame.maxY >= screen.height * 0.75 && windowFrame.maxY <= screen.height + 8
         guard isPillShape else { return }
         // An opaque background (album-art fill) separates the pill from the
@@ -86,7 +89,11 @@ private func findNowPlayingBarPill(in root: UIView) -> UIView? {
         // The real pill carries content (artwork, labels); the empty host
         // containers around it do not.
         let hasContent = !view.subviews.isEmpty
-        let score = (hasFill ? 4 : 0) + (hasContent ? 2 : 0) + (view.layer.cornerRadius > 0 ? 1 : 0)
+        // The pill is inset (~8pt per side) from its full-width host container,
+        // which spans the window. A view that reaches within 4pt of its
+        // superview's edge is a container, not the pill.
+        let isInset = frame.minX >= 4 && frame.maxX <= superBounds.width - 4
+        let score = (isInset ? 8 : 0) + (hasFill ? 4 : 0) + (hasContent ? 2 : 0) + (view.layer.cornerRadius > 0 ? 1 : 0)
 
         candidates.append((NSStringFromClass(type(of: view)), "\(frame)", "\(windowFrame)", score))
         if score > bestScore || (score == bestScore && depth > bestDepth) {
