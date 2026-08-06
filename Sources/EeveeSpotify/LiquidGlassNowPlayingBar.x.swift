@@ -41,43 +41,40 @@ private func findNowPlayingBarPill(in root: UIView) -> UIView? {
     var best: UIView?
     var bestScore = -1
     var bestDepth = -1
-    var candidates: [(String, String, Int)] = []
-    var candidatesLogged = false
+    var candidates: [(String, String, String, Int)] = []
 
     func walk(_ view: UIView, depth: Int) {
+        for sub in view.subviews {
+            walk(sub, depth: depth + 1)
+        }
         let frame = view.frame
         // The pill is nested (frame is in its superview's coordinates), so the
         // bottom-of-screen check must use window coordinates, not view.frame.
         let windowFrame = view.convert(view.bounds, to: nil)
+        // Shape is a hard gate: the pill is the only full-width ~56pt capsule
+        // pinned to the bottom in window coordinates. Views that fail it — the
+        // LIVE badge, 44pt buttons, containers not yet positioned — can never
+        // win, even if they have a corner radius or an opaque fill.
         let isPillShape = frame.height >= 48 && frame.height <= 64
             && frame.width >= screen.width - 24 && frame.width <= screen.width + 2
             && windowFrame.maxY >= screen.height * 0.75 && windowFrame.maxY <= screen.height + 8
+        guard isPillShape else { return }
         // An opaque background (album-art fill) separates the pill from the
         // transparent outline/glow view that surrounds it.
         let hasFill = (view.backgroundColor?.cgColor.alpha ?? 0) > 0
-        let score = (isPillShape ? 1 : 0) + (view.layer.cornerRadius > 0 ? 1 : 0) + (hasFill ? 1 : 0)
+        let score = (view.layer.cornerRadius > 0 ? 1 : 0) + (hasFill ? 1 : 0)
 
-        if score > 0 {
-            if !candidatesLogged {
-                candidates.append((NSStringFromClass(type(of: view)), "\(frame)", score))
-            }
-            if score > bestScore || (score == bestScore && depth > bestDepth) {
-                best = view
-                bestScore = score
-                bestDepth = depth
-            }
-        }
-        for sub in view.subviews {
-            walk(sub, depth: depth + 1)
+        candidates.append((NSStringFromClass(type(of: view)), "\(frame)", "\(windowFrame)", score))
+        if score > bestScore || (score == bestScore && depth > bestDepth) {
+            best = view
+            bestScore = score
+            bestDepth = depth
         }
     }
 
     walk(root, depth: 0)
-    if !candidates.isEmpty {
-        for (name, frame, score) in candidates {
-            writeDebugLog("[LiquidGlassNPB] Candidate: \(name) frame=\(frame) score=\(score)")
-        }
-        candidatesLogged = true
+    for (name, frame, windowFrame, score) in candidates {
+        writeDebugLog("[LiquidGlassNPB] Candidate: \(name) frame=\(frame) window=\(windowFrame) score=\(score)")
     }
     if let best {
         writeDebugLog("[LiquidGlassNPB] Pill: \(NSStringFromClass(type(of: best))) frame=\(best.frame) windowFrame=\(best.convert(best.bounds, to: nil)) cornerRadius=\(best.layer.cornerRadius) bg=\(String(describing: best.backgroundColor))")
@@ -174,6 +171,11 @@ class NowPlayingBarViewControllerHook: ClassHook<UIViewController> {
         orig.viewDidLayoutSubviews()
 
         if #available(iOS 26.0, *) {
+            // The bar VC runs layout passes before it is attached to the window
+            // (everything at origin, frames garbage, no pill in the tree yet).
+            // Wait until it is on screen or the finder picks up junk.
+            guard target.view.window != nil else { return }
+
             let pill: UIView?
             if let cached = appliedPill, cached.isDescendant(of: target.view) {
                 pill = cached
