@@ -154,7 +154,7 @@ final class SponsorBlockOverlay: NSObject, UIGestureRecognizerDelegate {
         // when the existing overlay already matches the current segments.
         if let existing = slider.subviews.first(where: { $0.accessibilityIdentifier == overlayTag })
             as? SponsorBlockOverlayContainer,
-            existing.frame == trackFrame,
+            existing.frame.equalTo(trackFrame, tolerance: 0.5),
             existing.segmentFrames.map(\.uuid) == frames.map(\.0) {
             return
         }
