@@ -10,6 +10,9 @@ private let captureQueue = DispatchQueue(label: "com.eeveespotify.capture")
 private var _capturedTrackTitle: String?
 private var _capturedArtistName: String?
 private var _capturedTrackId: String?
+private var _capturedTrackURI: String?
+private var _capturedArtistURI: String?
+private var _capturedCanvasVideoFileID: String?
 
 var capturedTrackTitle: String? {
     get { captureQueue.sync { _capturedTrackTitle } }
@@ -22,6 +25,49 @@ var capturedArtistName: String? {
 var capturedTrackId: String? {
     get { captureQueue.sync { _capturedTrackId } }
     set { captureQueue.sync { _capturedTrackId = newValue } }
+}
+var capturedTrackURI: String? {
+    get { captureQueue.sync { _capturedTrackURI } }
+    set { captureQueue.sync { _capturedTrackURI = newValue } }
+}
+var capturedArtistURI: String? {
+    get { captureQueue.sync { _capturedArtistURI } }
+    set { captureQueue.sync { _capturedArtistURI = newValue } }
+}
+var capturedCanvasVideoFileID: String? {
+    get { captureQueue.sync { _capturedCanvasVideoFileID } }
+    set { captureQueue.sync { _capturedCanvasVideoFileID = newValue } }
+}
+
+func captureCanvasTrack(_ track: SPTPlayerTrack) {
+    let diagnosticsEnabled = requestCanvasNowPlayingProbe()
+    let uri = track.URI()
+    guard let uriString = (uri as? NSURL)?.absoluteString, !uriString.isEmpty else {
+        if diagnosticsEnabled {
+            writeDebugLog("[CANVAS][TRACK] missing URI for \(track.trackTitle())")
+        }
+        return
+    }
+
+    capturedTrackURI = uriString
+    let trackObject = track as AnyObject
+    let artistSelector = Selector(("artistURI"))
+    if trackObject.responds(to: artistSelector),
+       let artistURL = trackObject.perform(artistSelector)?.takeUnretainedValue() as? NSURL {
+        capturedArtistURI = artistURL.absoluteString
+    }
+    let metadataSelector = Selector(("spt_metadata_canvasVideoFileID"))
+    if let metadata = trackObject.value(forKey: "metadata") as? NSDictionary,
+       metadata.responds(to: metadataSelector),
+       let fileID = metadata.perform(metadataSelector)?.takeUnretainedValue() as? String {
+        capturedCanvasVideoFileID = fileID
+        if diagnosticsEnabled {
+            writeDebugLog("[CANVAS][TRACK] canvasFileID=\(fileID)")
+        }
+    }
+    if diagnosticsEnabled {
+        writeDebugLog("[CANVAS][TRACK] uri=\(uriString) title=\(track.trackTitle()) artist=\(track.artistName()) artistURI=\(capturedArtistURI ?? "?")")
+    }
 }
 
 // Per-track metadata cache populated synchronously by SPTPlayerTrackURIV91Hook

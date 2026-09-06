@@ -56,14 +56,12 @@ private func appendFallbackReasonLabel(to anchorLabel: UIView, tag: String, desc
         return nil
     }
     
-    // ── START OF AI GENERATED CODE ──
     // Diagnostics: dump the real geometry so the label's position can be
     // verified instead of guessed from stale dumps.
     let anchorFrame = anchorLabel.frame
     let superFrame = superview.frame
     let windowFrame = superview.convert(superview.bounds, to: nil)
     writeDebugLog("[FallbackReasons] \(tag): anchor=\(NSCoder.string(for: anchorFrame)) super=\(NSCoder.string(for: superFrame)) superInWindow=\(NSCoder.string(for: windowFrame))")
-    // ── END OF AI GENERATED CODE ──
     
     let fallbackLabel = UILabel()
     fallbackLabel.text = "\(fallbackReasonPrefix)\(description)"
