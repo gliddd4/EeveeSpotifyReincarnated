@@ -3,7 +3,6 @@ import Foundation
 import MachO.dyld
 import EeveeSpotifyC
 
-// ── START OF AI GENERATED CODE ──
 // The actual lyrics-card gate on 9.1.68:
 //
 //   LyricsUIServiceImplementation.registerScrollProviderIn:  (IMP 0x10772ad94)
@@ -29,12 +28,36 @@ struct V91LyricsCardGatePatchGroup: HookGroup {}
 private enum LyricsCardGateAddress {
     // __TEXT segment vmaddr in the decrypted Spotify binary.
     static let textSegmentVmaddr: UInt64 = 0x100000000
-    // File offset of the `tbz w20, #0x0, exit` instruction within
-    // __TEXT,__text (verified by reading 4 bytes at 0x34f584c → 0x360004f4
-    // which decodes as `tbz w20, #0, 0x1034f58e8`).
-    static let tbzFileOffset: UInt = 0x34f584c
+
+    // ── START OF AI GENERATED CODE ──
+    // File offset of the `tbz w20, #0x0, epilogue` gate inside
+    // __TEXT,__text, per Spotify build. The gate sits in the shared
+    // lyrics scroll-card registration flow reached from
+    // LyricsUIServiceImplementation.registerScrollProviderIn:.
+    //  - 9.1.68: verified 0x34f584c → 0x360004f4 (tbz w20, #0, 0x1034f58e8)
+    //  - 9.1.78: verified 0x316c30c → 0x360004f4 (tbz w20, #0, 0x10316c3a8;
+    //            reached via the availability thunk at 0x10316c288)
+    // Every candidate is verified at runtime before NOP-ing, so a stale or
+    // unknown offset is simply skipped.
+    static let knownGates: [String: UInt] = [
+        "9.1.68": 0x34f584c,
+        "9.1.78": 0x316c30c,
+    ]
+    // Fallback for unknown builds: the 9.1.x series so far keeps the same
+    // instruction; try each known offset and let the byte check decide.
+    static var tbzFileOffset: UInt {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        return knownGates[version] ?? knownGates.values.min()!
+    }
+    // All offsets to try (unknown builds get every known candidate).
+    static var candidateOffsets: [UInt] {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        if let known = knownGates[version] { return [known] }
+        return Array(knownGates.values).sorted()
+    }
     // The linked (pre-slide) runtime address of that instruction.
-    static let tbzLinkedAddress: UInt64 = textSegmentVmaddr + UInt64(tbzFileOffset)
+    static var tbzLinkedAddress: UInt64 { textSegmentVmaddr + UInt64(tbzFileOffset) }
+    // ── END OF AI GENERATED CODE ──
 }
 
 // Resolve the runtime load address of the main Spotify executable image.
@@ -69,34 +92,44 @@ func patchLyricsCardGate() {
     // The image slide is mainBase - linked-vmaddr (slide applies uniformly to
     // every segment offset). Runtime address of the gate = linked + slide.
     let slide = mainBase &- LyricsCardGateAddress.textSegmentVmaddr
-    let runtimeAddress = LyricsCardGateAddress.tbzLinkedAddress &+ slide
 
-    writeDebugLog("[LyricsGatePatch] mainBase=0x\(String(mainBase, radix: 16)) "
-                + "slide=0x\(String(slide, radix: 16)) "
-                + "target=0x\(String(runtimeAddress, radix: 16))")
-
-    // Verify the byte at the target is the expected tbz instruction.
-    // If the build-time IPA patch already NOP'd it, we're done.
     let expectedTbz: UInt32 = 0x360004f4
     let expectedNop: UInt32 = 0xD503201F
-    let actual = unsafeBitLoad32(at: runtimeAddress)
-    if actual == expectedNop {
-        writeDebugLog("[LyricsGatePatch] Already NOP-patched (build-time), nothing to do")
-        return
-    }
-    if actual != expectedTbz {
-        writeDebugLog("[LyricsGatePatch] WARNING: byte at target is "
-                    + "0x\(String(actual, radix: 16)), expected 0x\(String(expectedTbz, radix: 16)) "
-                    + "— Spotify build may differ, skipping patch")
+
+    // ── START OF AI GENERATED CODE ──
+    for offset in LyricsCardGateAddress.candidateOffsets {
+        let runtimeAddress = LyricsCardGateAddress.textSegmentVmaddr
+            &+ UInt64(offset) &+ slide
+
+        writeDebugLog("[LyricsGatePatch] mainBase=0x\(String(mainBase, radix: 16)) "
+                    + "slide=0x\(String(slide, radix: 16)) "
+                    + "candidate offset=0x\(String(offset, radix: 16)) "
+                    + "target=0x\(String(runtimeAddress, radix: 16))")
+
+        // Verify the byte at the target is the expected tbz instruction.
+        // If the build-time IPA patch already NOP'd it, we're done.
+        let actual = unsafeBitLoad32(at: runtimeAddress)
+        if actual == expectedNop {
+            writeDebugLog("[LyricsGatePatch] Already NOP-patched (build-time) at 0x\(String(runtimeAddress, radix: 16)), nothing to do")
+            return
+        }
+        guard actual == expectedTbz else {
+            writeDebugLog("[LyricsGatePatch] candidate 0x\(String(offset, radix: 16)) has "
+                        + "0x\(String(actual, radix: 16)), expected 0x\(String(expectedTbz, radix: 16)) — trying next")
+            continue
+        }
+
+        let success = EeveeSBPatchInstruction(UInt(runtimeAddress))
+        if success {
+            writeDebugLog("[LyricsGatePatch] Runtime NOP applied at 0x\(String(runtimeAddress, radix: 16))")
+        } else {
+            writeDebugLog("[LyricsGatePatch] Runtime NOP FAILED (vm_protect denied by PPL) — build-time patch must handle it")
+        }
         return
     }
 
-    let success = EeveeSBPatchInstruction(UInt(runtimeAddress))
-    if success {
-        writeDebugLog("[LyricsGatePatch] Runtime NOP applied at 0x\(String(runtimeAddress, radix: 16))")
-    } else {
-        writeDebugLog("[LyricsGatePatch] Runtime NOP FAILED (vm_protect denied by PPL) — build-time patch must handle it")
-    }
+    writeDebugLog("[LyricsGatePatch] No known gate offset matched this Spotify build — lyrics card gate left untouched")
+    // ── END OF AI GENERATED CODE ──
 }
 
 @inline(__always)
@@ -105,4 +138,3 @@ private func unsafeBitLoad32(at address: UInt64) -> UInt32 {
     guard let p = ptr else { return 0 }
     return p.load(as: UInt32.self)
 }
-// ── END OF AI GENERATED CODE ──

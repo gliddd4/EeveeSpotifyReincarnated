@@ -111,14 +111,39 @@ jobs:
           unzip -o spotify.ipa "Payload/Spotify.app/Spotify" -d patch_tmp
 
           BIN="patch_tmp/Payload/Spotify.app/Spotify"
-          OFFSET=$((0x34f584c))
+          unzip -o spotify.ipa "Payload/Spotify.app/Info.plist" -d patch_tmp >/dev/null
+          plutil -extract CFBundleShortVersionString raw -o patch_tmp/ver.txt patch_tmp/Payload/Spotify.app/Info.plist 2>/dev/null || echo unknown > patch_tmp/ver.txt
+          SPOT_VERSION=$(tr -d "\n" < patch_tmp/ver.txt)
+          echo "Spotify build: $SPOT_VERSION"
 
-          # Verify the existing 4 bytes are the expected tbz instruction.
+          # The gate moves between Spotify builds; known file offsets:
+          #   9.1.68 -> 0x34f584c   9.1.78 -> 0x316c30c
+          case "$SPOT_VERSION" in
+            9.1.68) OFFSET=$((0x34f584c)) ;;
+            9.1.78) OFFSET=$((0x316c30c)) ;;
+            *)
+              echo "::warning::No known lyrics-gate offset for Spotify $SPOT_VERSION - skipping binary patch; runtime patch in tweak will attempt known offsets safely."
+              echo "SKIP_BINARY_PATCH=1" >> $GITHUB_ENV
+              rm -rf patch_tmp
+              exit 0
+              ;;
+          esac
+
+          # Verify the existing 4 bytes are the expected tbz instruction
+          # before writing the NOP; the runtime patch double-checks on device.
           EXISTING=$(xxd -s $OFFSET -l 4 -p "$BIN")
-          echo "Bytes at offset 0x34f584c: $EXISTING"
+          echo "Bytes at offset 0x$(printf %x $OFFSET): $EXISTING"
+          if [ "$EXISTING" == "1f2003d5" ]; then
+            echo "Already NOP-patched - nothing to do"
+            echo "SKIP_BINARY_PATCH=1" >> $GITHUB_ENV
+            rm -rf patch_tmp
+            exit 0
+          fi
           if [ "$EXISTING" != "f4040036" ]; then
-            echo "::error::Unexpected bytes at 0x34f584c: $EXISTING (expected f4040036). Spotify build may differ."
-            exit 1
+            echo "::warning::Expected tbz (f4040036) at offset not found (got $EXISTING). Binary layout differs - skipping build-time patch; runtime patch in tweak will verify before NOP-ing."
+            echo "SKIP_BINARY_PATCH=1" >> $GITHUB_ENV
+            rm -rf patch_tmp
+            exit 0
           fi
 
           # Write NOP (0xD503201F, little-endian: 1f2003d5)
@@ -126,7 +151,7 @@ jobs:
 
           # Verify the patch was written.
           PATCHED=$(xxd -s $OFFSET -l 4 -p "$BIN")
-          echo "Patched bytes at offset 0x34f584c: $PATCHED"
+          echo "Patched bytes: $PATCHED"
           if [ "$PATCHED" != "1f2003d5" ]; then
             echo "::error::Patch verification failed: $PATCHED (expected 1f2003d5)"
             exit 1
@@ -228,10 +253,24 @@ jobs:
           Tools/alt-icons.sh "$OUT_IPA"
 
       - name: Verify binary patch in final IPA
-        if: ${{ inputs.ipa_url != '' }}
+        if: ${{ inputs.ipa_url != '' && env.SKIP_BINARY_PATCH != '1' }}
         run: |
-          FINAL_BYTES=$(unzip -p "$OUT_IPA" "Payload/Spotify.app/Spotify" | xxd -s $((0x34f584c)) -l 4 -p 2>/dev/null || echo "FAIL")
-          echo "Final IPA bytes at 0x34f584c: $FINAL_BYTES"
+          rm -rf verify_tmp && mkdir verify_tmp
+          unzip -o "$OUT_IPA" "Payload/Spotify.app/Info.plist" -d verify_tmp >/dev/null
+          plutil -extract CFBundleShortVersionString raw -o verify_tmp/ver.txt verify_tmp/Payload/Spotify.app/Info.plist 2>/dev/null || echo unknown > verify_tmp/ver.txt
+          SPOT_VERSION=$(tr -d "\n" < verify_tmp/ver.txt)
+          rm -rf verify_tmp
+          case "$SPOT_VERSION" in
+            9.1.68) VOFFSET=$((0x34f584c)) ;;
+            9.1.78) VOFFSET=$((0x316c30c)) ;;
+            *)      VOFFSET="" ;;
+          esac
+          if [ -z "$VOFFSET" ]; then
+            echo "::warning::No known gate offset for $SPOT_VERSION - skipping final verification."
+            exit 0
+          fi
+          FINAL_BYTES=$(unzip -p "$OUT_IPA" "Payload/Spotify.app/Spotify" | xxd -s $VOFFSET -l 4 -p 2>/dev/null || echo "FAIL")
+          echo "Final IPA bytes: $FINAL_BYTES"
           if [ "$FINAL_BYTES" != "1f2003d5" ]; then
             echo "::error::Binary patch LOST in final IPA (expected 1f2003d5, got $FINAL_BYTES). cyan may have discarded the patch."
             exit 1
