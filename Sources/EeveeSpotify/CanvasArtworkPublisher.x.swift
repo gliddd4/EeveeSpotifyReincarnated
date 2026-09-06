@@ -482,12 +482,12 @@ private func canvasStartHeartbeat() {
 }
 
 func activateCanvasArtworkPublisher() {
-    canvasStartProbeSweeper()
-    canvasStartHeartbeat()
     guard canvasVideoSupported else {
         writeDebugLog("[CANVAS][PUB] disabled: supportedAnimatedArtworkKeys unavailable (iOS < 26)")
         return
     }
+    canvasStartProbeSweeper()
+    canvasStartHeartbeat()
     CanvasPublisherGroup().activate()
     writeDebugLog("[CANVAS][PUB] activated (iOS 26 animated artwork publisher) key=\(canvasAnimatedKey ?? "nil")")
 }

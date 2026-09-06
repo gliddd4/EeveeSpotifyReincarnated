@@ -28,11 +28,11 @@ class UAUserActivitySetWebpageURLHook: ClassHook<NSObject> {
     @objc(setWebpageURL:)
     func setWebpageURL(_ url: NSURL?) {
         if let u = url, let scheme = u.scheme {
-            if scheme == "http" || scheme == "https" || scheme == "file" {
+            if scheme == "http" || scheme == "https" {
                 orig.setWebpageURL(u)
                 return
             }
-            // spotify: / spotify-moments: / etc. would throw — swallow silently.
+            // spotify: / spotify-moments: / file: / etc. would throw — swallow silently.
             return
         }
         orig.setWebpageURL(nil)

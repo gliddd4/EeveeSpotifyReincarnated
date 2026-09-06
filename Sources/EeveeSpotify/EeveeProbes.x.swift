@@ -19,8 +19,8 @@ private let traceSB:    Bool = false
 // pick real selectors for a TrueShuffle hook on this Spotify version.
 private let traceShuffle: Bool = false
 // ── START OF AI GENERATED CODE ──
-// Enabled for the experimental Canvas build so device logs are self-contained.
-private let traceCanvas: Bool = true
+// Gated by env so production builds don't spam logs; enable with EEVEE_TRACE_CANVAS=1.
+private let traceCanvas: Bool = probeEnabled("EEVEE_TRACE_CANVAS")
 // ── END OF AI GENERATED CODE ──
 
 private let importantNotifSubstrings: [String] = [

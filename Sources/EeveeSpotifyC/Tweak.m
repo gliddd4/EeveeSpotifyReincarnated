@@ -1,5 +1,6 @@
 #import <Orion/Orion.h>
 #import <Foundation/Foundation.h>
+#import <string.h>
 #import <objc/message.h>
 #import <mach/mach.h>
 #import <mach/vm_prot.h>

@@ -4,8 +4,6 @@ import UIKit
 import Foundation
 import ObjectiveC.runtime
 
-import ObjectiveC.runtime
-
 // ── START OF AI GENERATED CODE ──
 private let writeDebugLogQueue = DispatchQueue(label: "com.eeveespotify.debuglog")
 private let writeDebugLogLock = NSLock()
@@ -435,11 +433,13 @@ struct EeveeSpotify: Tweak {
                 // skip the group if it doesn't exist on this build.
                 return NSClassFromString("_TtC15Settings_ECMKit30ListRowInteractionListenerView") != nil
             }()
-            if providerOK {
+            if providerOK && reminderOK {
                 NonIOS14PremiumPatchingGroup().activate()
                 writeDebugLog("[INIT] Activated NonIOS14PremiumPatchingGroup (statefulPlayer) reminderOK=\(reminderOK)")
-            } else {
+            } else if !providerOK {
                 writeDebugLog("[INIT] Skipped NonIOS14PremiumPatchingGroup (provider class missing)")
+            } else {
+                writeDebugLog("[INIT] Skipped NonIOS14PremiumPatchingGroup (ListRowInteractionListenerView missing)")
             }
 
             // Lyrics hooks (guarded)
