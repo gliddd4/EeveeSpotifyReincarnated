@@ -211,11 +211,19 @@ struct EeveeSettingsView: View {
                         PopUpHelper.showPopUp(message: "no_debug_log_found".localized, buttonText: "no_debug_log_found_ok".localized)
                         return
                     }
-                    let lyricLines = String(data: logData, encoding: .utf8)?
+                    guard let fullLog = String(data: logData, encoding: .utf8) else {
+                        PopUpHelper.showPopUp(message: "no_debug_log_found".localized, buttonText: "no_debug_log_found_ok".localized)
+                        return
+                    }
+                    let lyricLines = fullLog
                         .components(separatedBy: .newlines)
                         .filter { $0.contains("Lyrics") || $0.contains("[V91]") }
+                    guard !lyricLines.isEmpty else {
+                        PopUpHelper.showPopUp(message: "no_debug_log_found".localized, buttonText: "no_debug_log_found_ok".localized)
+                        return
+                    }
                     let lyricLogPath = NSTemporaryDirectory() + "eeveespotify_lyric_debug.log"
-                    try? lyricLines?.joined(separator: "\n")
+                    try? lyricLines.joined(separator: "\n")
                         .write(toFile: lyricLogPath, atomically: true, encoding: .utf8)
                     let lyricLogURL = URL(fileURLWithPath: lyricLogPath)
                     let lyricActivityVC = UIActivityViewController(activityItems: [lyricLogURL], applicationActivities: nil)
