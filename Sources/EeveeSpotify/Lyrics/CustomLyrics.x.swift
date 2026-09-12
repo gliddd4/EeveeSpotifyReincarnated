@@ -856,17 +856,6 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
         lyrics = prefetchedLyrics
     }
 
-    // (local) For real Spotify tracks with no custom lyrics, return nil so
-    // the hook falls through to Spotify's original response instead of
-    // delivering an empty object (black/empty lyrics UI).
-    let isLocalTrack = trackIdentifier.isLocalOrNonSpotifyTrackId || isLocalOrSyntheticTrack
-    if !isLocalTrack, lyrics.data.lines.isEmpty {
-        writeDebugLog("[Lyrics] No custom lyrics for Spotify track \(trackIdentifier); falling through to original")
-        return nil
-    }
-
-    let lyricsColorsSettings = UserDefaults.lyricsColors
-
     // Gray-card triage (9.1.68/78, original-colors mode): dump the native
     // color-lyrics payload as parsed, so device logs show whether the server
     // sends gray / the parse drops the fields (vibrant card needs nonzero bg
@@ -878,6 +867,20 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
     } else {
         writeDebugLog("[Lyrics] no native payload parsed for \(trackIdentifier)")
     }
+
+    // BUG FIX (local): for real Spotify tracks (not local files), if no
+    // custom lyrics were found, return nil so the hook falls through to
+    // Spotify's original response. Without this, the empty Lyrics object gets
+    // serialized and delivered, causing a black/empty lyrics UI for songs
+    // that have no lyrics.
+
+    let isLocalTrack = trackIdentifier.isLocalOrNonSpotifyTrackId || isLocalOrSyntheticTrack
+    if !isLocalTrack, lyrics.data.lines.isEmpty {
+        writeDebugLog("[Lyrics] No custom lyrics for Spotify track \(trackIdentifier); falling through to original")
+        return nil
+    }
+    
+    let lyricsColorsSettings = UserDefaults.lyricsColors
 
     if lyricsColorsSettings.displayOriginalColors, let originalLyrics = originalLyrics {
         lyrics.colors = originalLyrics.colors
