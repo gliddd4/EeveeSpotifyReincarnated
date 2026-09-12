@@ -44,11 +44,15 @@ private let geniusLyricsRepository = GeniusLyricsRepository()
 private let petitLyricsRepository = PetitLyricsRepository()
 
 // Overload for 9.1.6 where we only have track ID from URL
-private func loadCustomLyricsForTrackId(_ trackIdIn: String) throws -> Lyrics {
+private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
 
-    // ── START OF AI GENERATED CODE ──
-    var trackId = trackIdIn
-    // ── END OF AI GENERATED CODE ──
+    // Covers both callers of this function — prefetchLyricsIfNeeded and
+    // getLyricsDataForCurrentTrack's bounded-wait fallback — so every fetch,
+    // however it started, is recorded here before any network call. See
+    // KaraokeLyricsStore.latestRequestedTrackId's doc comment for why this
+    // needs to happen at request *start*, not completion.
+    KaraokeLyricsStore.shared.noteRequestStarted(trackId: trackId)
+
     var source = UserDefaults.lyricsSource
 
     var currentTitle: String? = nil
@@ -314,6 +318,9 @@ private func loadCustomLyricsForCurrentTrack() throws -> Lyrics {
     let trackTitle = track.trackTitle()
     let artistName = track.artistName()
 
+    // Same reasoning as loadCustomLyricsForTrackId's call to this — see
+    // KaraokeLyricsStore.latestRequestedTrackId's doc comment.
+    KaraokeLyricsStore.shared.noteRequestStarted(trackId: track.trackIdentifier)
     lyricsSearchTitle = trackTitle
     lyricsSearchArtist = artistName
 
@@ -758,6 +765,13 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
         throw LyricsError.noCurrentTrack
     }
 
+    // See the comment on updateTrackIdFromLyricsFetch itself for why this is
+    // here: on builds where KaraokePlaybackTracker's usual player-observer
+    // registration fails, this is the only reliable source it has for the
+    // current track ID, and this call site fires on every real track change
+    // regardless of that.
+    KaraokePlaybackTracker.shared.updateTrackIdFromLyricsFetch(trackIdentifier)
+
     // If the identifier is still the placeholder (capture never ran and no
     // live track was available), treat it as local so loadCustomLyricsForTrackId
     // forces Genius and doesn't try a provider that needs a real Spotify id.
@@ -787,15 +801,54 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
         return data
     }
 
-    var lyrics = try loadCustomLyricsForTrackId(trackIdentifier)
 
-    // BUG FIX: When displayOriginalColors is on, the prefetch fast-path above
-    // is skipped (it can't return early since colors are applied later), but a
-    // fresh API call may come back degraded — e.g. SpicyLyrics answered the
-    // same track with a full Syllable result to the prefetch but a short
-    // Static response to the real request, which parses to zero lines and
-    // renders as the fabricated "This song is instrumental." placeholder.
-    // Prefer whichever candidate has more lines; colors are re-applied below.
+    // Bounded wait around the synchronous fallback fetch, specifically
+    // because a track stuck "queued" (503) on SpicyLyrics has a retry loop
+    // (performQuery) that can legitimately run for up to ~26s — and this
+    // function runs on whatever thread Spotify itself calls it from, not a
+    // background one. Without a bound, skipping through several
+    // back-to-back queued tracks could each block that thread for a long
+    // stretch, one after another. This is the leading theory for lyrics
+    // "breaking" after rapid skipping and needing an app restart to
+    // recover — a real, reachable blocking path — though I don't have a
+    // direct log capture of that exact failure to confirm the mechanism
+    // beyond this.
+    //
+    // The underlying fetch keeps running in the background past the
+    // timeout — its result still reaches KaraokeLyricsStore (and, via
+    // whatever the next prefetch/fetch for the same track does,
+    // prefetchedResult) through loadCustomLyricsForTrackId itself; only
+    // THIS caller stops waiting on it. A slow fetch isn't wasted, it's just
+    // no longer something Spotify's own thread sits through.
+    let fallbackTimeout: TimeInterval = 4.0
+    let semaphore = DispatchSemaphore(value: 0)
+    var fetchedLyrics: Lyrics?
+    var fetchedError: Error?
+    DispatchQueue.global(qos: .userInitiated).async {
+        do {
+            fetchedLyrics = try loadCustomLyricsForTrackId(trackIdentifier)
+        } catch {
+            fetchedError = error
+        }
+        semaphore.signal()
+    }
+    guard semaphore.wait(timeout: .now() + fallbackTimeout) == .success else {
+        writeDebugLog("[Lyrics] synchronous fetch for \(trackIdentifier) exceeded \(fallbackTimeout)s — falling through without waiting further")
+        throw LyricsError.noSuchSong
+    }
+    if let fetchedError = fetchedError {
+        throw fetchedError
+    }
+    guard var lyrics = fetchedLyrics else {
+        throw LyricsError.noSuchSong
+    }
+
+    // BUG FIX (local): a fresh API call may come back degraded — e.g.
+    // SpicyLyrics answered the same track with a full Syllable result to the
+    // prefetch but a short Static response to the real request, which parses
+    // to zero lines and renders as the fabricated "This song is
+    // instrumental." placeholder. Prefer whichever candidate has more lines;
+    // colors are re-applied below.
     if let prefetchedData = peekPrefetch(trackId: trackIdentifier),
        let prefetchedLyrics = try? Lyrics(serializedBytes: prefetchedData),
        prefetchedLyrics.data.lines.count > lyrics.data.lines.count {
@@ -804,10 +857,11 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
         lyrics = prefetchedLyrics
     }
 
-    // BUG FIX: For real Spotify tracks (not local files), if no custom lyrics
-    // were found, return nil so the hook falls through to Spotify's original
-    // response. Without this, the empty Lyrics object gets serialized and
-    // delivered, causing a black/empty lyrics UI for songs that have no lyrics.
+    // BUG FIX (local): for real Spotify tracks (not local files), if no
+    // custom lyrics were found, return nil so the hook falls through to
+    // Spotify's original response. Without this, the empty Lyrics object gets
+    // serialized and delivered, causing a black/empty lyrics UI for songs
+    // that have no lyrics.
     let isLocalTrack = trackIdentifier.isLocalOrNonSpotifyTrackId || isLocalOrSyntheticTrack
     if !isLocalTrack, lyrics.data.lines.isEmpty {
         writeDebugLog("[Lyrics] No custom lyrics for Spotify track \(trackIdentifier); falling through to original")
