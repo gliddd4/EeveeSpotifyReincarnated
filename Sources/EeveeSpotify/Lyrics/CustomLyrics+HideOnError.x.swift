@@ -28,7 +28,13 @@ class ErrorViewControllerHook: ClassHook<UIViewController> {
             controller.dataSource.activeProviders.removeAll {
                 NSStringFromClass(type(of: $0)) == HookTargetNameHelper.lyricsScrollProvider
             }
-            
+
+            // 9.1.78: collectionView is gone from the ObjC runtime on the new
+            // controller class — unguarded call SIGABRTs (same as the npv
+            // branch below and the karaoke poll timer).
+            guard Dynamic.convert(controller, to: NSObject.self).responds(to: Selector("collectionView")) else {
+                return
+            }
             controller.collectionView().reloadData()
         }
         else if let controller = npvScrollViewController, let dataSource = scrollDataSource {
