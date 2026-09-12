@@ -872,28 +872,46 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
     }
     
     let lyricsColorsSettings = UserDefaults.lyricsColors
-    
+
+    // Gray-card triage (9.1.68/78, original-colors mode): dump the native
+    // color-lyrics payload as parsed, so device logs show whether the server
+    // sends gray / the parse drops the fields (vibrant card needs nonzero bg
+    // here) or the card ignores color-lyrics entirely (vibrant here + gray on
+    // screen points at the context_track_color pipeline instead).
+    if let originalLyrics = originalLyrics {
+        let nc = originalLyrics.colors
+        writeDebugLog("[Lyrics] native colors for \(trackIdentifier): hasColors=\(originalLyrics.hasColors) bg=\(String(format: "%08X", nc.backgroundColor)) line=\(String(format: "%08X", nc.lineColor)) active=\(String(format: "%08X", nc.activeLineColor)) lines=\(originalLyrics.data.lines.count) by=\(originalLyrics.data.providedBy)")
+    } else {
+        writeDebugLog("[Lyrics] no native payload parsed for \(trackIdentifier)")
+    }
+
     if lyricsColorsSettings.displayOriginalColors, let originalLyrics = originalLyrics {
         lyrics.colors = originalLyrics.colors
     }
     else {
         var color: Color
-        
+        var colorSource = "original-passthrough"
+
         if lyricsColorsSettings.useStaticColor {
             color = Color(hex: lyricsColorsSettings.staticColor)
+            colorSource = "static"
         }
         else if let extractedHex = resolvedTrackExtractedColor(for: trackIdentifier),
                 !extractedHex.isEmpty {
             color = Color(hex: extractedHex)
                 .normalized(lyricsColorsSettings.normalizationFactor)
+            colorSource = "extracted"
         }
         else if let uiColor = backgroundViewModel?.color() {
             color = Color(uiColor)
                 .normalized(lyricsColorsSettings.normalizationFactor)
+            colorSource = "backgroundVM"
         }
         else {
             color = Color.gray
+            colorSource = "gray-fallback"
         }
+        writeDebugLog("[Lyrics] color source for \(trackIdentifier): \(colorSource)")
         
         lyrics.colors = LyricsColors.with {
             $0.backgroundColor = color.uInt32
