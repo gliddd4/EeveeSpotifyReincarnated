@@ -69,47 +69,6 @@ class CanvasDownloadTaskProbeHook: ClassHook<NSObject> {
     }
 }
 
-private let canvasProbeSweepQueue = DispatchQueue(label: "com.eeveespotify.canvas.probe-sweep")
-private var canvasProbeSeen: Set<String> = []
-
-private func canvasProbeSweepOnce() {
-    let fm = FileManager.default
-    var roots: [URL] = []
-    roots.append(URL(fileURLWithPath: NSTemporaryDirectory()))
-    roots.append(contentsOf: fm.urls(for: .cachesDirectory, in: .userDomainMask))
-    roots.append(contentsOf: fm.urls(for: .applicationSupportDirectory, in: .userDomainMask))
-    for root in roots {
-        guard let enumerator = fm.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles],
-            errorHandler: { _, _ in true }
-        ) else { continue }
-        while let item = enumerator.nextObject() {
-            guard let url = item as? URL else { continue }
-            if url.lastPathComponent.hasPrefix("canvas_") { continue }
-            if enumerator.level > 6 {
-                enumerator.skipDescendants()
-                continue
-            }
-            guard canvasVideoExtensions.contains(url.pathExtension.lowercased()) else { continue }
-            if canvasProbeSeen.insert(url.path).inserted {
-                writeDebugLog("[CANVAS][PROBE] sweep found \(url.path)")
-            }
-        }
-    }
-}
-
-private func canvasStartProbeSweeper() {
-    let deadline = Date(timeIntervalSinceNow: 3600)
-    canvasProbeSweepQueue.async {
-        while Date() < deadline {
-            autoreleasepool { canvasProbeSweepOnce() }
-            Thread.sleep(forTimeInterval: 4)
-        }
-    }
-}
-
 private let canvasKey3x4 = "MPNowPlayingInfoProperty3x4AnimatedArtwork"
 private let canvasKey1x1 = "MPNowPlayingInfoProperty1x1AnimatedArtwork"
 
@@ -175,7 +134,7 @@ private var canvasResolvedSources: [String: URL] {
     set { canvasPublishQueue.sync { _canvasResolvedSources = newValue } }
 }
 
-private func findCanvasVideoFile(modifiedSince cutoff: Date) -> URL? {
+private func findCanvasVideoFile(modifiedSince cutoff: Date, excluding pinnedPaths: Set<String>) -> URL? {
     let fm = FileManager.default
     var roots: [URL] = []
     roots.append(URL(fileURLWithPath: NSTemporaryDirectory()))
@@ -204,6 +163,10 @@ private func findCanvasVideoFile(modifiedSince cutoff: Date) -> URL? {
                 continue
             }
             guard canvasVideoExtensions.contains(url.pathExtension.lowercased()) else { continue }
+            // Skip files that were already pinned to a different (still-tracked) track.
+            // Without this, a fast skip / gapless prefetch can make the adjacent track's
+            // cache file look like "the newest one" for the track we're currently resolving.
+            if pinnedPaths.contains(url.path) { continue }
             guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
                   values.isRegularFile == true,
                   let mod = values.contentModificationDate else { continue }
@@ -232,7 +195,27 @@ private func findCanvasVideoFile(modifiedSince cutoff: Date) -> URL? {
             }
         }
     }
-    return fileIDMatch?.url ?? artistMatch?.url ?? newestRecent?.url
+    // Stability-gate only the winners, not every file enumerated: the in-loop
+    // double-read slept 150ms per candidate and stalled each resolve by seconds.
+    // Winner priority is unchanged (fileID > artist > newest); an unstable winner
+    // falls through to the next priority instead of failing the whole scan.
+    if let c = fileIDMatch, isCanvasFileStable(c.url) { return c.url }
+    if let c = artistMatch, isCanvasFileStable(c.url) { return c.url }
+    if let c = newestRecent, isCanvasFileStable(c.url) { return c.url }
+    return nil
+}
+
+// Fix for "wrong/adjacent track" and "sometimes never loads": a candidate file whose
+// size is still changing is either an in-progress download (grabbing it now can yield
+// a partial/corrupt video, which silently fails to crop) or a file being overwritten
+// for the next track (grabbing it now can attach the wrong track's canvas). A 150ms
+// double-read is enough to distinguish "still writing" from "already on disk".
+private func isCanvasFileStable(_ url: URL) -> Bool {
+    let fm = FileManager.default
+    guard let size1 = try? fm.attributesOfItem(atPath: url.path)[.size] as? UInt64 else { return false }
+    Thread.sleep(forTimeInterval: 0.15)
+    guard let size2 = try? fm.attributesOfItem(atPath: url.path)[.size] as? UInt64 else { return false }
+    return size1 == size2 && size1 > 0
 }
 
 private func canvasCleanupOldCrops() {
@@ -369,6 +352,11 @@ private func ensureCanvasArtwork(for uri: String) {
         canvasPreviewImage = nil
         canvasScanStart = Date()
         canvasResolving = false
+        // Fix for slow lock screen artwork: previously a track change inherited the
+        // previous track's throttle timer, so the first scan for the *new* track could
+        // be delayed up to canvasScanThrottle seconds for no reason. A track change is
+        // always worth scanning for immediately.
+        lastScanAttempt = .distantPast
         canvasCleanupOldCrops()
         writeDebugLog("[CANVAS][PUB] new track uri=\(uri)")
     }
@@ -389,8 +377,9 @@ private func ensureCanvasArtwork(for uri: String) {
     guard !canvasResolving else { return }
     lastScanAttempt = now
     canvasResolving = true
+    let pinnedPaths = Set(canvasResolvedSources.values.map { $0.path })
     DispatchQueue.global(qos: .utility).async {
-        let found = findCanvasVideoFile(modifiedSince: scanStart)
+        let found = findCanvasVideoFile(modifiedSince: scanStart, excluding: pinnedPaths)
         var cropped: URL?
         var preview: UIImage?
         if let found = found {
@@ -486,7 +475,6 @@ func activateCanvasArtworkPublisher() {
         writeDebugLog("[CANVAS][PUB] disabled: supportedAnimatedArtworkKeys unavailable (iOS < 26)")
         return
     }
-    canvasStartProbeSweeper()
     canvasStartHeartbeat()
     CanvasPublisherGroup().activate()
     writeDebugLog("[CANVAS][PUB] activated (iOS 26 animated artwork publisher) key=\(canvasAnimatedKey ?? "nil")")
