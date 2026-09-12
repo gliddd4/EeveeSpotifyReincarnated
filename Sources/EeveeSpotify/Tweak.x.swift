@@ -538,14 +538,18 @@ struct EeveeSpotify: Tweak {
                     writeDebugLog("[INIT] Skipped V91LyricsLocalFileGateGroup (spt_isLocalFile missing on NSURL)")
                 }
 
-                // Surgical inline NOP of the lyrics-card gate on 9.1.68.
+                // EXPERIMENT (2026-09-12): runtime NOP of the lyrics-card gate
+                // disabled — the CI build-time patch (buildipa.yml: Patch
+                // Spotify binary) NOPs the same tbz, and we want to know if it
+                // alone carries local-file cards. Re-enable if local-file
+                // lyrics cards disappear on this build.
                 // VLC: LyricsUIServiceImplementation.registerScrollProviderIn:
                 // → 0x1034f57c8 calls the provider's Swift availability witness
                 // method; if it returns false, `tbz w20, #0x0` at 0x1034f584c
                 // skips the actual registerProvider: call and the lyrics card
                 // is silently dropped for local files. NOP that one instruction
                 // so the card is always registered.
-                if EeveeSpotify.hookTarget == .v91 {
+                if false, EeveeSpotify.hookTarget == .v91 {
                     patchLyricsCardGate()
                 }
 
