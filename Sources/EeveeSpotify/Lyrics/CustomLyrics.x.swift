@@ -44,7 +44,10 @@ private let geniusLyricsRepository = GeniusLyricsRepository()
 private let petitLyricsRepository = PetitLyricsRepository()
 
 // Overload for 9.1.6 where we only have track ID from URL
-private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
+private func loadCustomLyricsForTrackId(_ trackIdIn: String) throws -> Lyrics {
+    // Local tracks get resolved to a real Spotify id below, so the parameter
+    // needs a mutable shadow.
+    var trackId = trackIdIn
 
     // Covers both callers of this function — prefetchLyricsIfNeeded and
     // getLyricsDataForCurrentTrack's bounded-wait fallback — so every fetch,
