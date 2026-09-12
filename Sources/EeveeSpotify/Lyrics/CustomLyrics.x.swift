@@ -917,6 +917,13 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
         }
     }
     
+    // TRIAGE-ONLY: log the colors actually delivered to the card, to
+    // distinguish "we delivered gray" from "the card overrode vibrant".
+    do {
+        let dc = lyrics.colors
+        writeDebugLog("[Lyrics] delivered colors: bg=\(String(format: "%08X", dc.backgroundColor)) line=\(String(format: "%08X", dc.lineColor)) active=\(String(format: "%08X", dc.activeLineColor))")
+    }
+
     return try lyrics.serializedData()
 }
 
