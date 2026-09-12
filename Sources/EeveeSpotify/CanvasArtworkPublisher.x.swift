@@ -197,11 +197,13 @@ private func findCanvasVideoFile(modifiedSince cutoff: Date, excluding pinnedPat
     }
     // Stability-gate only the winners, not every file enumerated: the in-loop
     // double-read slept 150ms per candidate and stalled each resolve by seconds.
-    // Winner priority is unchanged (fileID > artist > newest); an unstable winner
-    // falls through to the next priority instead of failing the whole scan.
-    if let c = fileIDMatch, isCanvasFileStable(c.url) { return c.url }
-    if let c = artistMatch, isCanvasFileStable(c.url) { return c.url }
-    if let c = newestRecent, isCanvasFileStable(c.url) { return c.url }
+    // Winner priority is unchanged (fileID > artist > newest). An
+    // existing-but-unstable candidate means the right file is still being
+    // written — return nil and retry next window rather than pinning a
+    // weaker (possibly adjacent-track) match.
+    if let c = fileIDMatch { return isCanvasFileStable(c.url) ? c.url : nil }
+    if let c = artistMatch { return isCanvasFileStable(c.url) ? c.url : nil }
+    if let c = newestRecent { return isCanvasFileStable(c.url) ? c.url : nil }
     return nil
 }
 
@@ -392,7 +394,10 @@ private func ensureCanvasArtwork(for uri: String) {
             if let found = found, let cropped = cropped {
                 canvasVideoURL = cropped
                 canvasPreviewImage = preview
-                canvasResolvedSources[uri] = found
+                var sources = canvasResolvedSources
+                if sources.count > 64 { sources.removeValue(forKey: sources.keys.first!) }
+                sources[uri] = found
+                canvasResolvedSources = sources
                 writeDebugLog("[CANVAS][PUB] resolved video \(found.path) cropped=\(cropped.path) pinned=\(found.lastPathComponent)")
             } else if let found = found {
                 writeDebugLog("[CANVAS][PUB] crop failed for \(found.path), skipping")
