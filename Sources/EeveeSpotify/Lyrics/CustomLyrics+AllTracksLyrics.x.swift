@@ -361,6 +361,15 @@ class SPTPlayerTrackURIV91Hook: ClassHook<NSObject> {
         // Genius fallback for local files keeps working.
         let syntheticId = localTrackSyntheticId(from: absoluteString)
         let syntheticURI = "spotify:track:\(syntheticId)"
+        // TRIAGE-ONLY artwork probe: log who consumes the synthetic URI. If
+        // artwork/image pipeline frames show up here, our rewrite is what
+        // breaks local-file album art in Now Playing (placeholder art).
+        do {
+            let stack = Thread.callStackSymbols.filter {
+                $0.contains("Spotify") || $0.contains("EeveeSpotify")
+            }.prefix(8).joined(separator: " << ")
+            writeDebugLog("[Lyrics] synthetic URI consumer: \(stack)")
+        }
         if uiRenderedTrackKey != syntheticId {
             uiRenderedTrackKey = syntheticId
             // Capture the local file's metadata keyed by the synthetic id — the
