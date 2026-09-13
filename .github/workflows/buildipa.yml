@@ -13,6 +13,11 @@ on:
         default: ""
         required: false
         type: string
+      without_spotipw:
+        description: "Exclude the spoti.pw sub-tweak from this build"
+        default: false
+        required: false
+        type: boolean
       patch_ipa:
         description: "Patch the built IPA with zxPluginsInject (ipapatch)"
         default: false
@@ -89,7 +94,9 @@ jobs:
         env:
           REPO_SLUG: ${{ github.repository }}
         run: |
-          THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
+          SPW_FLAG=""
+          if [ "${{ inputs.without_spotipw }}" = "true" ]; then SPW_FLAG="WITHOUT_SPOTIPW=1"; fi
+          THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1 $SPW_FLAG
           DEB_PATH=$(find packages -name "com.eevee.spotify_*.deb" | head -1)
           [ -n "$DEB_PATH" ] || { echo "deb not produced" >&2; exit 1; }
           echo "DEB_PATH=$DEB_PATH"   >> $GITHUB_ENV

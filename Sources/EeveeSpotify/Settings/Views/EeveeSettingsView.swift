@@ -145,6 +145,7 @@ struct EeveeSettingsView: View {
                 )
             }
 
+#if !WITHOUT_SPOTIPW
             Button {
                 // spoti.pw is a UIKit page (an SGPage), not a SwiftUI view, so it's pushed
                 // directly onto the same navigation stack instead of going through
@@ -157,6 +158,7 @@ struct EeveeSettingsView: View {
                     imageSystemName: "slider.horizontal.3"
                 )
             }
+#endif
 
             //
 

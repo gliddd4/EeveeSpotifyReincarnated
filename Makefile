@@ -35,6 +35,14 @@ SG_VERSION := $(if $(wildcard $(SPOTIPW_CONTROL)),$(shell sed -n 's/^Version: //
 # scripts/extract-flags.py on a decrypted IPA to get the real table; this stub then drops out.
 SGFLAGLIST := $(SPOTIPW_DIR)/Sources/Features/Flags/SGFlagList.m
 EeveeSpotify_FILES = $(shell find Sources/EeveeSpotify -name '*.swift') $(shell find Sources/EeveeSpotifyC -name '*.m' -o -name '*.c' -o -name '*.mm' -o -name '*.cpp' -o -name '*.x')
+# WITHOUT_SPOTIPW=1 drops the spoti.pw sub repo from the build (for users who
+# prefer Eevee-only). The settings page entry is compiled out alongside it.
+WITHOUT_SPOTIPW ?= 0
+ifeq ($(WITHOUT_SPOTIPW),1)
+EeveeSpotify_FILES := $(filter-out Sources/EeveeSpotifyC/SubRepos/spoti.pw/%,$(EeveeSpotify_FILES))
+EeveeSpotify_CFLAGS += -DWITHOUT_SPOTIPW
+EeveeSpotify_SWIFTFLAGS += -DWITHOUT_SPOTIPW
+endif
 ifeq ($(wildcard $(SGFLAGLIST)),)
 EeveeSpotify_FILES += Tools/SGFlagListStub.m
 endif
