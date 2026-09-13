@@ -473,6 +473,82 @@ func extractTrackId(from path: String) -> String? {
 // Works on 9.1.x (both normal and local tracks) without depending on the
 // backgroundViewModel — which can be nil on the NPVScrollV2ViewController
 // path.
+
+// Local-file artwork color (gray-card fix): local tracks have no server-side
+// extracted_color and backgroundViewModel is nil on this path, so the chain
+// below always ends at gray-fallback. Sample the artwork Spotify publishes
+// to MPNowPlayingInfoCenter for the current item instead. Cached per track.
+private let localArtworkColorLock = NSLock()
+private var localArtworkColorCache: [String: String] = [:]
+
+func localFileArtworkColorHex(for trackId: String) -> String? {
+    localArtworkColorLock.lock()
+    let cached = localArtworkColorCache[trackId]
+    localArtworkColorLock.unlock()
+    if let cached { return cached }
+    guard let info = MPNowPlayingInfoCenter.default().nowPlayingInfo,
+          let artwork = info[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork,
+          let image = artwork.image(at: CGSize(width: 64, height: 64)),
+          let cgImage = image.cgImage,
+          let hex = averageColorHex(of: cgImage) else { return nil }
+    localArtworkColorLock.lock()
+    localArtworkColorCache[trackId] = hex
+    localArtworkColorLock.unlock()
+    return hex
+}
+
+// Vibrant-swatch pick (Spotify-like): downscale, histogram in HSV, take the
+// most populous saturated bucket. Falls back to the plain average when the
+// art has no saturated color at all (e.g. B&W covers) instead of gray.
+private func averageColorHex(of image: CGImage) -> String? {
+    let w = 48, h = 48
+    guard let ctx = CGContext(data: nil, width: w, height: h,
+                              bitsPerComponent: 8, bytesPerRow: w * 4,
+                              space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+    guard let data = ctx.data else { return nil }
+    let px = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+
+    // hueBuckets x satBuckets histogram weighted by pixel count; value gates
+    // out near-black/near-white which never win a vibrant slot.
+    let HB = 36, SB = 4
+    var hist = Array(repeating: Array(repeating: 0, count: SB), count: HB)
+    var histRGB = Array(repeating: Array(repeating: (r: 0, g: 0, b: 0, n: 0), count: SB), count: HB)
+    var totalR = 0, totalG = 0, totalB = 0, totalN = 0
+    for i in 0 ..< (w * h) {
+        let r = Int(px[i * 4]), g = Int(px[i * 4 + 1]), b = Int(px[i * 4 + 2])
+        totalR += r; totalG += g; totalB += b; totalN += 1
+        var hh: CGFloat = 0, ss: CGFloat = 0, vv: CGFloat = 0
+        UIColor(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
+            .getHue(&hh, saturation: &ss, brightness: &vv, alpha: nil)
+        guard vv > 0.12, vv < 0.97, ss > 0.25 else { continue }
+        let hi = min(HB - 1, Int(hh * CGFloat(HB)))
+        let si = min(SB - 1, Int(ss * CGFloat(SB)))
+        hist[hi][si] += 1
+        histRGB[hi][si].r += r; histRGB[hi][si].g += g; histRGB[hi][si].b += b; histRGB[hi][si].n += 1
+    }
+    guard totalN > 0 else { return nil }
+
+    // Score = saturation bucket first, then population: the most saturated
+    // well-represented hue wins, like a vibrant swatch pick.
+    var best: (score: Double, r: Int, g: Int, b: Int)? = nil
+    for hi in 0 ..< HB {
+        for si in 0 ..< SB {
+            let c = histRGB[hi][si]
+            guard c.n > totalN / 200 else { continue }
+            let score = Double(si) * 1000 + Double(hist[hi][si])
+            if best == nil || score > best!.score {
+                best = (score, c.r / c.n, c.g / c.n, c.b / c.n)
+            }
+        }
+    }
+    if let best {
+        return String(format: "%02X%02X%02X", best.r, best.g, best.b)
+    }
+    return String(format: "%02X%02X%02X", totalR / totalN, totalG / totalN, totalB / totalN)
+}
+
 func resolvedTrackExtractedColor(for trackId: String) -> String? {
     guard let track = statefulPlayer?.currentTrack() else { return nil }
     let nsTrack = track as AnyObject
@@ -903,6 +979,12 @@ func getLyricsDataForCurrentTrack(_ originalPath: String, originalLyrics: Lyrics
             color = Color(uiColor)
                 .normalized(lyricsColorsSettings.normalizationFactor)
             colorSource = "backgroundVM"
+        }
+        else if isLocalTrack, let localHex = localFileArtworkColorHex(for: trackIdentifier),
+                !localHex.isEmpty {
+            color = Color(hex: localHex)
+                .normalized(lyricsColorsSettings.normalizationFactor)
+            colorSource = "localArtwork"
         }
         else {
             color = Color.gray
